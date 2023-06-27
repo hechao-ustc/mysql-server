@@ -1,0 +1,183 @@
+drop table if exists t1;
+select floor(5.5),floor(-5.5);
+floor(5.5)	floor(-5.5)
+5	-6
+explain select floor(5.5),floor(-5.5);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> floor(5.5)
+     floor(-5.5)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         floor(5.5) | floor(-5.5)
+select ceiling(5.5),ceiling(-5.5);
+ceiling(5.5)	ceiling(-5.5)
+6	-5
+explain select ceiling(5.5),ceiling(-5.5);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> ceiling(5.5)
+     ceiling(-5.5)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         ceiling(5.5) | ceiling(-5.5)
+select truncate(52.64,1),truncate(52.64,2),truncate(52.64,-1),truncate(52.64,-2), truncate(-52.64,1),truncate(-52.64,-1);
+truncate(52.64, 1)	truncate(52.64, 2)	truncate(52.64, -1)	truncate(52.64, -2)	truncate(-52.64, 1)	truncate(-52.64, -1)
+52.6	52.64	50	0	-52.6	-50
+explain select truncate(52.64,1),truncate(52.64,2),truncate(52.64,-1),truncate(52.64,-2), truncate(-52.64,1),truncate(-52.64,-1);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> truncate(52.64, 1)
+     truncate(52.64, 2)
+    <slot 2> truncate(52.64, -1)
+    <slot 3> truncate(52.64, -2)
+    <slot 4> truncate(-52.64, 1)
+    <slot 5> truncate(-52.64, -1)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         truncate(52.64, 1) | truncate(52.64, 2) | truncate(52.64, -1) | truncate(52.64, -2) | truncate(-52.64, 1) | truncate(-52.64, -1)
+select round(5.5),round(-5.5);
+round(5.5)	round(-5.5)
+6	-6
+explain select round(5.5),round(-5.5);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> round(5.5)
+     round(-5.5)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         round(5.5) | round(-5.5)
+select round(5.64,1),round(5.64,2),round(5.64,-1),round(5.64,-2);
+round(5.64, 1)	round(5.64, 2)	round(5.64, -1)	round(5.64, -2)
+5.6	5.64	10	0
+select abs(-10), sign(-5), sign(5), sign(0);
+abs(-10)	sign(-5.0)	sign(5.0)	sign(0.0)
+10	-1	1	0
+explain select abs(-10), sign(-5), sign(5), sign(0);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> abs(-10)
+     sign(-5.0)
+    <slot 2> sign(5.0)
+    <slot 3> sign(0.0)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         abs(-10) | sign(-5.0) | sign(5.0) | sign(0.0)
+select ln(exp(10)),exp(ln(sqrt(10))*2),ln(-1),ln(0),ln(NULL);
+ln(exp(10))	exp(ln(sqrt(10)) * 2)	ln(-1)	ln(0)	ln(NULL)
+10	10.000000000000002	NULL	NULL	NULL
+explain select ln(exp(10)),exp(ln(sqrt(10))*2),ln(-1),ln(0),ln(NULL);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> ln(exp(10.0))
+     exp(ln(sqrt(10.0)) * 2)
+    <slot 2> ln(-1.0)
+    <slot 3> ln(0.0)
+    <slot 4> ln(NULL)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         ln(exp(10.0)) | exp(ln(sqrt(10.0)) * 2) | ln(-1.0) | ln(0.0) | ln(NULL)
+SELECT ACOS(1.0);
+acos(1.0)
+0
+SELECT ASIN(1.0);
+asin(1.0)
+1.5707963267948966
+SELECT ACOS(0.2*5.0);
+acos(0.2 * 5.0)
+0
+SELECT ACOS(0.5*2.0);
+acos(0.5 * 2.0)
+0
+SELECT ASIN(0.8+0.2);
+asin(0.8 + 0.2)
+1.5707963267948966
+SELECT ASIN(1.2-0.2);
+asin(1.2 - 0.2)
+1.5707963267948966
+explain select degrees(pi()),radians(360);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> degrees(pi())
+     radians(360.0)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         degrees(pi()) | radians(360.0)
+select rand(rand);
+ERROR 42S22: errCode = 2, detailMessage = Unknown column 'rand' in 'table list'
+select ceil(0.09);
+ceil(0.09)
+1
+select ceil(0.000000000000000009);
+ceil(9.0E-18)
+1
+select abs(-2) * -2;
+abs(-2) * -2
+-4
+set sql_mode='traditional';
+select ln(-1);
+ln(-1.0)
+NULL
+select log10(-1);
+log10(-1.0)
+NULL
+select log2(-1);
+log2(-1.0)
+NULL
+select log(2,-1);
+log(2.0, -1.0)
+NULL
+select log(-2,1);
+log(-2.0, 1.0)
+NULL
+set sql_mode='';
+select round(111,-10);
+round(111.0, -10)
+0
+select round(-5000111000111000155,-1);
+round(-5.0001110001110006E18, -1)
+-5.0001110001110006e+18
+select round(15000111000111000155,-1);
+round(1.5000111000111E19, -1)
+1.5000111000111e+19
+select truncate(-5000111000111000155,-1);
+truncate(-5.0001110001110006E18, -1)
+-5.0001110001110006e+18
+select truncate(15000111000111000155,-1);
+truncate(1.5000111000111E19, -1)
+1.5000111000111e+19

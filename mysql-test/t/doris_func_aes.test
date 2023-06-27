@@ -1,0 +1,108 @@
+--echo # Tests of the AES functionality
+
+--echo #
+--echo # WL#6781: Support multiple AES encryption modes
+--echo #
+
+--echo #### AES_ENCRYPT return type
+
+--echo # must be aes-128-ecb
+SELECT @@block_encryption_mode;
+
+--echo # must work and return a string
+SELECT TO_BASE64(AES_ENCRYPT('a', 'b'));
+
+--echo # must return 16
+SELECT LENGTH(AES_ENCRYPT('a', 'b'));
+
+--echo # must be equal
+SELECT AES_ENCRYPT('a', 'b') = AES_ENCRYPT('a', 'b');
+
+
+--echo #### AES_ENCRYPT parameters
+
+--echo # must return NULL
+SELECT AES_ENCRYPT('a', NULL);
+SELECT AES_ENCRYPT(NULL, 'a');
+SELECT AES_ENCRYPT(NULL, NULL);
+
+--echo # must return value
+SELECT TO_BASE64(AES_ENCRYPT('a', 0));
+SELECT TO_BASE64(AES_ENCRYPT('a', 12.04));
+SELECT TO_BASE64(AES_ENCRYPT(0, 'a'));
+SELECT TO_BASE64(AES_ENCRYPT(12.04, 'a'));
+SELECT TO_BASE64(AES_ENCRYPT(0, 0));
+SELECT TO_BASE64(AES_ENCRYPT(12.04, 12.04));
+
+
+--echo #### parameter conversion
+
+--echo must be equal
+SELECT AES_ENCRYPT('a', 12.04) = AES_ENCRYPT('a', '12.04');
+SELECT AES_ENCRYPT('a', 0) = AES_ENCRYPT('a', '0');
+SELECT AES_ENCRYPT(12.04, 'a') = AES_ENCRYPT('12.04', 'a');
+SELECT AES_ENCRYPT(0, 'a') = AES_ENCRYPT('0', 'a');
+SELECT AES_ENCRYPT('\x0Z', 'a') = AES_ENCRYPT('\x0Z', 'a');
+SELECT AES_ENCRYPT('a', '\x0Z') = AES_ENCRYPT('a', '\x0Z');
+
+--echo # must not be equal
+SELECT AES_ENCRYPT('a', '\x0Y') = AES_ENCRYPT('a', '\x0Z');
+SELECT AES_ENCRYPT('\x0Y', 'a') = AES_ENCRYPT('\x0Z', 'a');
+
+
+--echo #### algorithm
+
+--echo # must not be equal
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('b', 'a');
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('a', 'b');
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('aa', 'a');
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('a', 'aa');
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT(REPEAT('a',1000), 'a');
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('a', REPEAT('a',1000));
+
+--echo #### IV
+
+--echo # must be equal
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('a', 'a', REPEAT('a', 16));
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('a', 'a', REPEAT('b', 16));
+
+--echo # must return a warning
+SELECT TO_BASE64(AES_ENCRYPT('a', 'a', 'a'));
+
+--echo # must pass
+SELECT TO_BASE64(AES_ENCRYPT('a', 'a', NULL));
+SELECT TO_BASE64(AES_ENCRYPT('a', 'a', REPEAT('a', 1024)));
+
+
+--echo #### AES_DECRYPT
+
+--echo # must return 1
+SELECT LENGTH(AES_DECRYPT(AES_ENCRYPT('a', 'a'), 'a'));
+
+--echo # must be equal
+SELECT AES_DECRYPT(AES_ENCRYPT('a','a'), 'a') = 'a';
+
+--echo # must be equal
+# SELECT AES_DECRYPT(AES_ENCRYPT(_UTF8'Жоро', 'a'), 'a') = _UTF8'Жоро';
+SELECT AES_DECRYPT(AES_ENCRYPT('Жоро', 'a'), 'a') = 'Жоро';
+
+--echo # must be NULL
+SELECT AES_DECRYPT(NULL, 'a');
+SELECT AES_DECRYPT('a', NULL);
+SELECT AES_DECRYPT(NULL, NULL);
+
+
+--echo #### AES_DECRYPT IV
+
+--echo # must be equal
+SELECT 'a' = AES_DECRYPT(AES_ENCRYPT('a', 'a'), 'a', NULL);
+SELECT 'a' = AES_DECRYPT(AES_ENCRYPT('a', 'a'), 'a', REPEAT('a',16));
+SELECT 'a' = AES_DECRYPT(AES_ENCRYPT('a', 'a'), 'a', REPEAT('a',100));
+
+--echo # must return a warning
+SELECT TO_BASE64(AES_DECRYPT(AES_ENCRYPT('a', 'a'), 'a', 'a'));
+
+
+--echo #
+--echo # End of 5.7 tests
+--echo #

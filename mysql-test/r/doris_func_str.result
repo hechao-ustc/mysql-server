@@ -1,0 +1,586 @@
+drop table if exists t1;
+drop table if exists t2;
+select 'hello',"'hello'",'""hello""','''h''e''l''l''o''',"hel""lo",'hel\'lo';
+'hello'	'''hello'''	'""hello""'	'''h''e''l''l''o'''	'hel"lo'	'hel''lo'
+hello	'hello'	""hello""	'h'e'l'l'o'	hel"lo	hel'lo
+select 'hello' 'monty';
+monty
+hello
+select length('\n\t\r\b\0\_\%\\');
+length('
+	
+10
+select bit_length('\n\t\r\b\0\_\%\\');
+bit_length('
+	
+80
+select char_length('\n\t\r\b\0\_\%\\');
+char_length('
+	
+10
+select hex(char(256));
+hex(char('utf8', 256))
+0120
+select locate('he','hello'),locate('he','hello',2),locate('lo','hello',2) ;
+locate('he', 'hello')	locate('he', 'hello', 2)	locate('lo', 'hello', 2)
+1	0	4
+select left('hello',null), right('hello',null);
+left('hello', NULL)	right('hello', NULL)
+NULL	
+select concat('',left(right(concat('what ',concat('is ','happening')),9),4),'',substring('monty',5,1)) ;
+concat('', left(right(concat('what ', concat('is ', 'happening')), 9), 4), '', substring('monty', 5, 1))
+happy
+select substring_index('www.tcx.se','.',-2),substring_index('www.tcx.se','.',1);
+substring_index('www.tcx.se', '.', -2)	substring_index('www.tcx.se', '.', 1)
+tcx.se	www
+select substring_index('www.tcx.se','tcx',1),substring_index('www.tcx.se','tcx',-1);
+substring_index('www.tcx.se', 'tcx', 1)	substring_index('www.tcx.se', 'tcx', -1)
+www.	.se
+select substring_index('.tcx.se','.',-2),substring_index('.tcx.se','.tcx',-1);
+substring_index('.tcx.se', '.', -2)	substring_index('.tcx.se', '.tcx', -1)
+tcx.se	.se
+select substring_index('aaaaaaaaa1','a',1);
+substring_index('aaaaaaaaa1', 'a', 1)
+
+select substring_index('aaaaaaaaa1','aa',1);
+substring_index('aaaaaaaaa1', 'aa', 1)
+
+select substring_index('aaaaaaaaa1','aa',2);
+substring_index('aaaaaaaaa1', 'aa', 2)
+aa
+select substring_index('aaaaaaaaa1','aa',3);
+substring_index('aaaaaaaaa1', 'aa', 3)
+aaaa
+select substring_index('aaaaaaaaa1','aa',4);
+substring_index('aaaaaaaaa1', 'aa', 4)
+aaaaaa
+select substring_index('aaaaaaaaa1','aa',5);
+substring_index('aaaaaaaaa1', 'aa', 5)
+aaaaaaaaa1
+select substring_index('aaaaaaaaa1','aaa',1);
+substring_index('aaaaaaaaa1', 'aaa', 1)
+
+select substring_index('aaaaaaaaa1','aaa',2);
+substring_index('aaaaaaaaa1', 'aaa', 2)
+aaa
+select substring_index('aaaaaaaaa1','aaa',3);
+substring_index('aaaaaaaaa1', 'aaa', 3)
+aaaaaa
+select substring_index('aaaaaaaaa1','aaa',4);
+substring_index('aaaaaaaaa1', 'aaa', 4)
+aaaaaaaaa1
+select substring_index('aaaaaaaaa1','aaaa',1);
+substring_index('aaaaaaaaa1', 'aaaa', 1)
+
+select substring_index('aaaaaaaaa1','aaaa',2);
+substring_index('aaaaaaaaa1', 'aaaa', 2)
+aaaa
+select substring_index('aaaaaaaaa1','1',1);
+substring_index('aaaaaaaaa1', '1', 1)
+aaaaaaaaa
+select substring_index('aaaaaaaaa1','a',-1);
+substring_index('aaaaaaaaa1', 'a', -1)
+1
+select substring_index('aaaaaaaaa1','aa',-1);
+substring_index('aaaaaaaaa1', 'aa', -1)
+1
+select substring_index('aaaaaaaaa1','aa',-2);
+substring_index('aaaaaaaaa1', 'aa', -2)
+aa1
+select substring_index('aaaaaaaaa1','aa',-3);
+substring_index('aaaaaaaaa1', 'aa', -3)
+aaaa1
+select substring_index('aaaaaaaaa1','aa',-4);
+substring_index('aaaaaaaaa1', 'aa', -4)
+aaaaaa1
+select substring_index('aaaaaaaaa1','aa',-5);
+substring_index('aaaaaaaaa1', 'aa', -5)
+aaaaaaaaa1
+select substring_index('aaaaaaaaa1','aaa',-1);
+substring_index('aaaaaaaaa1', 'aaa', -1)
+1
+select substring_index('aaaaaaaaa1','aaa',-2);
+substring_index('aaaaaaaaa1', 'aaa', -2)
+aaa1
+select substring_index('aaaaaaaaa1','aaa',-3);
+substring_index('aaaaaaaaa1', 'aaa', -3)
+aaaaaa1
+select substring_index('aaaaaaaaa1','aaa',-4);
+substring_index('aaaaaaaaa1', 'aaa', -4)
+aaaaaaaaa1
+select substring_index('the king of thethe hill','the',-2);
+substring_index('the king of thethe hill', 'the', -2)
+the hill
+select substring_index('the king of the the hill','the',-2);
+substring_index('the king of the the hill', 'the', -2)
+ the hill
+select substring_index('the king of the  the hill','the',-2);
+substring_index('the king of the  the hill', 'the', -2)
+  the hill
+select substring_index('the king of the  the hill',' the ',-1);
+substring_index('the king of the  the hill', ' the ', -1)
+hill
+select substring_index('the king of the  the hill',' the ',-2);
+substring_index('the king of the  the hill', ' the ', -2)
+ the hill
+select substring_index('the king of the  the hill',' ',-1);
+substring_index('the king of the  the hill', ' ', -1)
+hill
+select substring_index('the king of the  the hill',' ',-2);
+substring_index('the king of the  the hill', ' ', -2)
+the hill
+select substring_index('the king of the  the hill',' ',-3);
+substring_index('the king of the  the hill', ' ', -3)
+ the hill
+select substring_index('the king of the  the hill',' ',-4);
+substring_index('the king of the  the hill', ' ', -4)
+the  the hill
+select substring_index('the king of the  the hill',' ',-5);
+substring_index('the king of the  the hill', ' ', -5)
+of the  the hill
+select substring_index('the king of the.the hill','the',-2);
+substring_index('the king of the.the hill', 'the', -2)
+.the hill
+select substring_index('the king of thethethe.the hill','the',-3);
+substring_index('the king of thethethe.the hill', 'the', -3)
+the.the hill
+select substring_index('the king of thethethe.the hill','the',-1);
+substring_index('the king of thethethe.the hill', 'the', -1)
+ hill
+select substring_index('the king of the the hill','the',1);
+substring_index('the king of the the hill', 'the', 1)
+
+select substring_index('the king of the the hill','the',2);
+substring_index('the king of the the hill', 'the', 2)
+the king of 
+select substring_index('the king of the the hill','the',3);
+substring_index('the king of the the hill', 'the', 3)
+the king of the 
+select concat(':',ltrim('  left  '),':',rtrim('  right  '),':');
+concat(':', ltrim('  left  '), ':', rtrim('  right  '), ':')
+:left  :  right:
+select concat_ws(', ','monty','was here','again');
+concat_ws(', ', 'monty', 'was here', 'again')
+monty, was here, again
+select concat_ws(NULL,'a'),concat_ws(',',NULL,'');
+concat_ws(NULL, 'a')	concat_ws(',', NULL, '')
+NULL	
+select concat_ws(',','',NULL,'a');
+concat_ws(',', '', NULL, 'a')
+,a
+SELECT CONCAT('"',CONCAT_WS('";"',repeat('a',60),repeat('b',60),repeat('c',60),repeat('d',100)), '"');
+concat('"', concat_ws('";"', repeat('a', 60), repeat('b', 60), repeat('c', 60), repeat('d', 100)), '"')
+"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+select replace('aaaa','a','b'),replace('aaaa','aa','b'),replace('aaaa','a','bb'),replace('aaaa','','b'),replace('bbbb','a','c');
+replace('aaaa', 'a', 'b')	replace('aaaa', 'aa', 'b')	replace('aaaa', 'a', 'bb')	replace('aaaa', '', 'b')	replace('bbbb', 'a', 'c')
+bbbb	bb	bbbbbbbb	aaaa	bbbb
+select replace(concat(lcase(concat('THIS',' ','IS',' ','A',' ')),ucase('false'),' ','test'),'FALSE','REAL') ;
+replace(concat(lcase(concat('THIS', ' ', 'IS', ' ', 'A', ' ')), ucase('false'), ' ', 'test'), 'FALSE', 'REAL')
+this is a REAL test
+select md5('hello');
+md5('hello')
+5d41402abc4b2a76b9719d911017c592
+select aes_decrypt(aes_encrypt('abc','1'),'1');
+aes_decrypt(aes_encrypt('abc', '***', 'AES_128_ECB'), '***', 'AES_128_ECB')
+abc
+select aes_decrypt(aes_encrypt('abc','1'),1);
+aes_decrypt(aes_encrypt('abc', '***', 'AES_128_ECB'), '***', 'AES_128_ECB')
+abc
+select aes_encrypt(NULL,"a");
+aes_encrypt(NULL, '***', 'AES_128_ECB')
+NULL
+select aes_encrypt("a",NULL);
+aes_encrypt('a', '***', 'AES_128_ECB')
+NULL
+select aes_decrypt(NULL,"a");
+aes_decrypt(NULL, '***', 'AES_128_ECB')
+NULL
+select aes_decrypt("a",NULL);
+aes_decrypt('a', '***', 'AES_128_ECB')
+NULL
+select aes_decrypt("a","a");
+aes_decrypt('a', '***', 'AES_128_ECB')
+NULL
+select aes_decrypt(aes_encrypt("","a"),"a");
+aes_decrypt(aes_encrypt('', '***', 'AES_128_ECB'), '***', 'AES_128_ECB')
+NULL
+select repeat('monty',5),concat('*',space(5),'*');
+repeat('monty', 5)	concat('*', space(5), '*')
+montymontymontymontymonty	*     *
+select reverse('abc'),reverse('abcd');
+reverse('abc')	reverse('abcd')
+cba	dcba
+select rpad('a',4,'1'),rpad('a',4,'12'),rpad('abcd',3,'12'), rpad(11, 10 , 22), rpad("ab", 10, 22);
+rpad('a', 4, '1')	rpad('a', 4, '12')	rpad('abcd', 3, '12')	rpad('11', 10, '22')	rpad('ab', 10, '22')
+a111	a121	abc	1122222222	ab22222222
+select lpad('a',4,'1'),lpad('a',4,'12'),lpad('abcd',3,'12'), lpad(11, 10 , 22);
+lpad('a', 4, '1')	lpad('a', 4, '12')	lpad('abcd', 3, '12')	lpad('11', 10, '22')
+111a	121a	abc	2222222211
+select rpad(741653838,17,'0'),lpad(741653838,17,'0');
+rpad('741653838', 17, '0')	lpad('741653838', 17, '0')
+74165383800000000	00000000741653838
+select rpad('abcd',7,'ab'),lpad('abcd',7,'ab');
+rpad('abcd', 7, 'ab')	lpad('abcd', 7, 'ab')
+abcdaba	abaabcd
+select rpad('abcd',1,'ab'),lpad('abcd',1,'ab');
+rpad('abcd', 1, 'ab')	lpad('abcd', 1, 'ab')
+a	a
+select rpad('STRING', 20, CONCAT('p','a','d') );
+rpad('STRING', 20, concat('p', 'a', 'd'))
+STRINGpadpadpadpadpa
+select lpad('STRING', 20, CONCAT('p','a','d') );
+lpad('STRING', 20, concat('p', 'a', 'd'))
+padpadpadpadpaSTRING
+select LEAST(NULL,'HARRY','HARRIOT',NULL,'HAROLD'),GREATEST(NULL,'HARRY','HARRIOT',NULL,'HAROLD');
+least(NULL, 'HARRY', 'HARRIOT', NULL, 'HAROLD')	greatest(NULL, 'HARRY', 'HARRIOT', NULL, 'HAROLD')
+NULL	NULL
+select least(1,2,3) | greatest(16,32,8), least(5,4)*1,greatest(-1.0,1.0)*1,least(3,2,1)*1.0,greatest(1,1.1,1.0),least("10",9),greatest("A","B","0");
+least(1, 2, 3) | greatest(16, 32, 8)	least(5, 4) * 1	greatest(-1.0, 1.0) * 1.0	least(3, 2, 1) * 1.0	greatest(1, 1.1, 1.0)	least('10', '9')	greatest('A', 'B', '0')
+33	4	1	1	1.100000000	10	B
+select unhex(hex("foobar")), hex(unhex("1234567890ABCDEF")), unhex("345678"), unhex(NULL);
+unhex(hex('foobar'))	hex(unhex('1234567890ABCDEF'))	unhex('345678')	unhex(NULL)
+foobar	1234567890ABCDEF	4Vx	NULL
+select hex(unhex("1")), hex(unhex("12")), hex(unhex("123")), hex(unhex("1234")), hex(unhex("12345")), hex(unhex("123456"));
+hex(unhex('1'))	hex(unhex('12'))	hex(unhex('123'))	hex(unhex('1234'))	hex(unhex('12345'))	hex(unhex('123456'))
+	12		1234		123456
+select length(unhex(md5("abrakadabra")));
+length(unhex(md5('abrakadabra')))
+16
+select reverse("");
+reverse('')
+
+select elt(2,1),field(NULL,"a","b","c"),reverse("");
+elt(2, '1')	field(NULL, 'a', 'b', 'c')	reverse('')
+NULL	NULL	
+select locate("a","b",2),locate("","a",1);
+locate('a', 'b', 2)	locate('', 'a', 1)
+0	1
+select concat("1","2")|0,concat("1",".5")+0.0;
+concat('1', '2') | 0	concat('1', '.5') + 0.0
+12	1.5
+select substring_index("www.tcx.se","",3);
+substring_index('www.tcx.se', '', 3)
+
+select length(repeat("a",100000000)),length(repeat("a",1000*64));
+length(repeat('a', 100000000))	length(repeat('a', 1000 * 64))
+10000	10000
+select SUBSTR('abcdefg',3,2);
+substr('abcdefg', 3, 2)
+cd
+select SUBSTRING('abcdefg',3,2);
+substring('abcdefg', 3, 2)
+cd
+select substring_index("1abcd;2abcd;3abcd;4abcd", ';', 2),substring_index("1abcd;2abcd;3abcd;4abcd", ';', -2);
+substring_index('1abcd;2abcd;3abcd;4abcd', ';', 2)	substring_index('1abcd;2abcd;3abcd;4abcd', ';', -2)
+1abcd;2abcd	3abcd;4abcd
+explain select md5('hello');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> md5('hello')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         md5('hello')
+explain select aes_decrypt(aes_encrypt('abc','1'),'1');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> aes_decrypt(aes_encrypt('abc', '***', 'AES_128_ECB'), '***', 'AES_128_ECB')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         aes_decrypt(aes_encrypt('abc', '***', 'AES_128_ECB'), '***', 'AES_128_ECB')
+explain select concat('*',space(5),'*');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> concat('*', space(5), '*')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         concat('*', space(5), '*')
+explain select reverse('abc');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> reverse('abc')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         reverse('abc')
+explain select rpad('a',4,'1');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> rpad('a', 4, '1')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         rpad('a', 4, '1')
+explain select lpad('a',4,'1');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> lpad('a', 4, '1')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         lpad('a', 4, '1')
+explain select concat_ws(',','',NULL,'a');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> concat_ws(',', '', NULL, 'a')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         concat_ws(',', '', NULL, 'a')
+explain select elt(2,1);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> elt(2, '1')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         elt(2, '1')
+explain select locate("a","b",2);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> locate('a', 'b', 2)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         locate('a', 'b', 2)
+explain select char(0);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> char('utf8', 0)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         char('utf8', 0)
+explain select conv(130,16,10);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> conv(130, 16, 10)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         conv(130, 16, 10)
+explain select hex(130);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> hex(130)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         hex(130)
+explain select length('\n\t\r\b\0\_\%\\');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> length('
+	 \_\%\')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         length('
+	 \_\%\')
+explain select bit_length('\n\t\r\b\0\_\%\\');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> bit_length('
+	 \_\%\')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         bit_length('
+	 \_\%\')
+explain select bit_length('\n\t\r\b\0\_\%\\');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> bit_length('
+	 \_\%\')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         bit_length('
+	 \_\%\')
+explain select concat('monty',' was here ','again');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> concat('monty', ' was here ', 'again')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         concat('monty', ' was here ', 'again')
+explain select length('hello');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> length('hello')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         length('hello')
+explain select char(ascii('h'));
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> char('utf8', ascii('h'))
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         char('utf8', ascii('h'))
+explain select replace('aaaa','a','b');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> replace('aaaa', 'a', 'b')
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         replace('aaaa', 'a', 'b')
+explain select SUBSTR('abcdefg',3,2);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> substr('abcdefg', 3, 2)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         substr('abcdefg', 3, 2)
+explain select substring_index("1abcd;2abcd;3abcd;4abcd", ';', 2);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> substring_index('1abcd;2abcd;3abcd;4abcd', ';', 2)
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         substring_index('1abcd;2abcd;3abcd;4abcd', ';', 2)
+SELECT lpad(12345, 5, "#");
+lpad('12345', 5, '#')
+12345
+SELECT conv(71, 10, 36), conv('1Z', 36, 10);
+conv(71, 10, 36)	conv('1Z', 36, 10)
+1Z	71
+SELECT conv(71, 10, 37), conv('1Z', 37, 10), conv(0,1,10),conv(0,0,10), conv(0,-1,10);
+conv(71, 10, 37)	conv('1Z', 37, 10)	conv(0, 1, 10)	conv(0, 0, 10)	conv(0, -1, 10)
+NULL	NULL	NULL	NULL	NULL
+create table t1 (id int(1), str varchar(10))
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+     );
+insert into t1 values (1,'aaaaaaaaaa'), (2,'bbbbbbbbbb');
+create table t2 (id int(1), str varchar(10))
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+     );
+insert into t2 values (1,'cccccccccc'), (2,'dddddddddd');
+select substring(concat(t1.str, t2.str), 1, 15) "name" from t1, t2
+where t2.id=t1.id order by name;
+name
+aaaaaaaaaaccccc
+bbbbbbbbbbddddd
+drop table t1;
+drop table t2;
+select left(1234, 3) + 0;
+left('1234', 3) + 0
+123
+create table t1 (a int not null, b varchar(40), c datetime)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+     );
+insert into t1 (a,b,c) values (1,'Tom','2004-12-10 12:13:14'),(2,'ball games','2004-12-10 12:13:14'), (3,'Basil','2004-12-10 12:13:14'), (4,'Dean','2004-12-10 12:13:14'),(5,'Ellis','2004-12-10 12:13:14'), (6,'Serg','2004-12-10 12:13:14'), (7,'Sergei','2004-12-10 12:13:14'),(8,'Georg','2004-12-10 12:13:14'),(9,'Salle','2004-12-10 12:13:14'),(10,'Sinisa','2004-12-10 12:13:14');
+select count(*) as total, left(c,10) as reg from t1 group by reg order by reg desc limit 0,12;
+total	reg
+10	2004-12-10
+drop table t1;
+SELECT CHAR(NULL,121,83,81,'76') as my_column;
+my_column
+ySQL
+SELECT CHAR_LENGTH(CHAR(NULL,121,83,81,'76')) as my_column;
+my_column
+4
+select field(0,NULL,1,0), field("",NULL,"bar",""), field(0.0,NULL,1.0,0.0);
+field(0, NULL, 1, 0)	field('', NULL, 'bar', '')	field(0.0, NULL, 1.0, 0.0)
+NULL	NULL	NULL
+select field(NULL,1,2,NULL), field(NULL,1,2,0);
+field(NULL, 1, 2, NULL)	field(NULL, 1, 2, 0)
+NULL	NULL

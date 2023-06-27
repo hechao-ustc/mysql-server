@@ -1,0 +1,90 @@
+#
+# Test of math functions
+#
+
+--disable_warnings                                                              
+drop table if exists t1;                                                        
+--enable_warnings                                                               
+
+select floor(5.5),floor(-5.5);
+explain select floor(5.5),floor(-5.5);
+select ceiling(5.5),ceiling(-5.5);
+explain select ceiling(5.5),ceiling(-5.5);
+select truncate(52.64,1),truncate(52.64,2),truncate(52.64,-1),truncate(52.64,-2), truncate(-52.64,1),truncate(-52.64,-1);
+explain select truncate(52.64,1),truncate(52.64,2),truncate(52.64,-1),truncate(52.64,-2), truncate(-52.64,1),truncate(-52.64,-1);
+select round(5.5),round(-5.5);
+explain select round(5.5),round(-5.5);
+select round(5.64,1),round(5.64,2),round(5.64,-1),round(5.64,-2);
+select abs(-10), sign(-5), sign(5), sign(0);
+explain select abs(-10), sign(-5), sign(5), sign(0);
+--replace_numeric_round 15
+select ln(exp(10)),exp(ln(sqrt(10))*2),ln(-1),ln(0),ln(NULL);
+explain select ln(exp(10)),exp(ln(sqrt(10))*2),ln(-1),ln(0),ln(NULL);
+
+#
+# Bug #2338 Trignometric arithmatic problems 
+#
+
+SELECT ACOS(1.0);
+SELECT ASIN(1.0);
+SELECT ACOS(0.2*5.0);
+SELECT ACOS(0.5*2.0);
+SELECT ASIN(0.8+0.2);
+SELECT ASIN(1.2-0.2);
+
+#
+# Bug #3051 FLOOR returns invalid 
+#
+
+
+#
+# Bug #9060 (format returns incorrect result)
+#
+
+explain select degrees(pi()),radians(360);
+
+#
+# Bug #7281: problem with rand()
+#
+
+--error 1054
+select rand(rand);
+
+# End of 4.1 tests
+
+
+#
+# Bug @10632 (Ceiling function returns wrong answer)
+#
+select ceil(0.09);
+select ceil(0.000000000000000009);
+
+#
+# Bug #11402: abs() forces rest of calculation to unsigned
+#
+select abs(-2) * -2;
+
+#
+# Bug #13820 (No warning on log(negative)
+#
+set sql_mode='traditional';
+select ln(-1);
+select log10(-1);
+select log2(-1);
+select log(2,-1);
+select log(-2,1);
+set sql_mode='';
+
+#
+# Bug #8461 truncate() and round() return false results 2nd argument negative.
+# 
+# round(a,-b) log_10(b) > a
+select round(111,-10);
+# round on bigint 
+select round(-5000111000111000155,-1);
+# round on unsigned bigint
+select round(15000111000111000155,-1);
+# truncate on bigint 
+select truncate(-5000111000111000155,-1);
+# truncate on unsigned bigint
+select truncate(15000111000111000155,-1);

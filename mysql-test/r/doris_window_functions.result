@@ -1,0 +1,135 @@
+# Test of SQL window functions.
+# ----------------------------------------------------------------------
+SET NAMES utf8;
+
+Flag unsupported aggregates as window functions
+
+drop table if exists t;
+drop table if exists t1;
+drop table if exists t2;
+DROP TABLE if exists tb;
+DROP TABLE if exists ss;
+Single window function (plus ORDER BY).
+CREATE TABLE t(i INT, j INT)
+DISTRIBUTED BY HASH(i) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t VALUES (1,1);
+INSERT INTO t VALUES (1,4);
+INSERT INTO t VALUES (1,2);
+INSERT INTO t VALUES (1,4);
+ANALYZE TABLE t;
+Catalog_Name	DB_Name	Table_Name	Columns	Job_Id
+internal	default_cluster:test	t	[i,j]	170676
+With LIMIT
+SELECT i, j, SUM(i+j) OVER (ORDER BY i DESC ROWS UNBOUNDED PRECEDING) FROM t LIMIT 3;
+i	j	sum(`i` + `j`) OVER(...)
+1	1	2
+1	4	7
+1	2	10
+With LIMIT when last tmp file step is optimized away
+CREATE TABLE t1 (i INT)
+DISTRIBUTED BY HASH(i) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t1 (i) VALUES (1);
+INSERT INTO t1 (i) VALUES (2);
+INSERT INTO t1 (i) VALUES (3);
+INSERT INTO t1 (i) VALUES (4);
+INSERT INTO t1 (i) VALUES (5);
+SELECT i, SUM(i) OVER (ORDER BY i ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING) FROM t1 LIMIT 3;
+i	sum(`i`) OVER(...)
+1	6
+2	10
+3	15
+DROP TABLE t1;
+Single ordered partition
+SELECT i, j, SUM(i+j) OVER (ORDER BY j ROWS UNBOUNDED PRECEDING) foo FROM t;
+i	j	foo
+1	1	2
+1	2	5
+1	4	10
+1	4	15
+SELECT i, j, SUM(i+j) OVER (ORDER BY j ROWS UNBOUNDED PRECEDING) foo FROM t ORDER BY foo;
+i	j	foo
+1	1	2
+1	2	5
+1	4	10
+1	4	15
+SELECT i, j, SUM(i+j) OVER (ORDER BY j ROWS UNBOUNDED PRECEDING) foo FROM t ORDER BY foo DESC;
+i	j	foo
+1	4	15
+1	4	10
+1	2	5
+1	1	2
+SELECT i, j, SUM(i+j) OVER (ORDER BY j DESC ROWS UNBOUNDED PRECEDING) foo FROM t;
+i	j	foo
+1	4	5
+1	4	10
+1	2	13
+1	1	15
+View with window function
+CREATE VIEW v AS
+SELECT i, j, SUM(i+j) OVER (ORDER BY j DESC ROWS UNBOUNDED PRECEDING) foo FROM t;
+SHOW CREATE VIEW v;
+View	Create View	character_set_client	collation_connection
+v	CREATE VIEW `v` COMMENT 'VIEW' AS SELECT `i` AS `i`, `j` AS `j`, sum(`i` + `j`) OVER (ORDER BY `j` DESC NULLS LAST ROWS UNBOUNDED PRECEDING) AS `foo` FROM `default_cluster:test`.`t`;	utf8	utf8_general_ci
+SELECT * FROM v;
+i	j	foo
+1	4	5
+1	4	10
+1	2	13
+1	1	15
+DROP VIEW v;
+SELECT i, j, SUM(i+j) OVER (ORDER BY j DESC ROWS UNBOUNDED PRECEDING) foo FROM t ORDER BY foo;
+i	j	foo
+1	4	5
+1	4	10
+1	2	13
+1	1	15
+SELECT i, j, SUM(i+j) OVER (ORDER BY j DESC ROWS UNBOUNDED PRECEDING) foo FROM t ORDER BY foo DESC;
+i	j	foo
+1	1	15
+1	2	13
+1	4	10
+1	4	5
+DROP TABLE t;
+CREATE TABLE t(i INT, j INT, k INT)
+DISTRIBUTED BY HASH(i) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t VALUES (1,1,1);
+INSERT INTO t VALUES (1,4,1);
+INSERT INTO t VALUES (1,2,1);
+INSERT INTO t VALUES (1,4,1);
+INSERT INTO t VALUES (1,1,2);
+INSERT INTO t VALUES (1,4,2);
+INSERT INTO t VALUES (1,2,2);
+INSERT INTO t VALUES (1,4,2);
+INSERT INTO t VALUES (1,1,3);
+INSERT INTO t VALUES (1,4,3);
+INSERT INTO t VALUES (1,2,3);
+INSERT INTO t VALUES (1,4,3);
+INSERT INTO t VALUES (1,1,4);
+INSERT INTO t VALUES (1,4,4);
+INSERT INTO t VALUES (1,2,4);
+INSERT INTO t VALUES (1,4,4);
+----------------------------------------------------------------------
+-    Combination with GROUP BY
+----------------------------------------------------------------------
+Show difference in binding of colums
+CREATE TABLE tb(a INT, b INT)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+Grouping version of SUM can refer to ungrouped column
+SELECT a, SUM(b) FROM tb GROUP BY a;
+a	sum(`b`)
+Windowing version of SUM cannot refer to ungrouped column since the
+grouping has already happened by the the the windowing starts
+and each row now represents multiple aggregated values of b
+DROP TABLE tb;

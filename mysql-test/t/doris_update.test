@@ -1,0 +1,131 @@
+# Skipping it for binlog_format=STATEMENT due to Unsafe statements:
+# unsafe auto-increment column, LIMIT clause.
+--source include/not_binlog_format_statement.inc
+
+#
+# test of updating of keys
+#
+
+--disable_warnings
+drop table if exists t1;
+drop table if exists t2;
+--enable_warnings
+
+CREATE TABLE t1
+ (
+ place_id bigint NOT NULL,
+ shows bigint DEFAULT '0',
+ ishows bigint DEFAULT '0',
+ ushows bigint DEFAULT '0',
+ clicks bigint DEFAULT '0',
+ iclicks bigint DEFAULT '0',
+ uclicks bigint DEFAULT '0',
+ ts DATETIME
+ )
+ UNIQUE KEY(place_id)
+ DISTRIBUTED BY HASH(place_id) BUCKETS 1
+ PROPERTIES (
+     "replication_num" = "1"
+ );
+
+INSERT INTO t1 (place_id,shows,ishows,ushows,clicks,iclicks,uclicks,ts)
+VALUES (1,0,0,0,0,0,0,20000928174434);
+UPDATE t1 SET shows=shows+1,ishows=ishows+1,ushows=ushows+1,clicks=clicks+1,iclicks=iclicks+1,uclicks=uclicks+1 WHERE place_id=1 AND ts>="2000-09-28 00:00:00";
+select place_id,shows from t1;
+drop table t1;
+
+#
+# Test of ORDER BY
+#
+
+create table t1 (a int not null, b int not null)
+UNIQUE KEY(a)
+ DISTRIBUTED BY HASH(a) BUCKETS 1
+ PROPERTIES (
+     "replication_num" = "1"
+ );
+insert into t1 values (1,1),(1,2),(1,3),(3,1),(3,2),(3,3),(3,1),(3,2),(3,3),(2,1),(2,2),(2,3);
+select * from t1 order by a,b;
+create table t2 (a int not null, b int not null)
+UNIQUE KEY(a)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+ PROPERTIES (
+     "replication_num" = "1"
+ );
+insert into t2 values (1,1),(1,2),(1,3);
+drop table t1;
+drop table t2;
+
+
+--echo End of 5.0 tests
+
+
+--echo #
+--echo # Bug#50545: Single table UPDATE IGNORE crashes on join view in
+--echo # sql_safe_updates mode.
+--echo #
+CREATE TABLE t1 ( a INT)
+UNIQUE KEY(a)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+INSERT INTO t1 VALUES (0), (1);
+CREATE VIEW v1 AS SELECT t11.a, t12.a AS b FROM t1 t11, t1 t12;
+SET SESSION sql_safe_updates = 1;
+
+
+SET SESSION sql_safe_updates = DEFAULT;
+DROP TABLE t1;
+DROP VIEW v1;
+
+
+--echo #
+--echo # Bug #29047894: ASSERTION FAILURE: ROW0MYSQL.CC:2387:TRX->ALLOW_SEMI_CONSISTENT()
+--echo #
+
+CREATE TABLE t1 (a INTEGER)
+UNIQUE KEY(a)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
+INSERT INTO t1 VALUES (0);
+
+# Cause the UPDATE to fail halfway, verifying that we're resetting
+# allow_semi_consistent() even in error paths.
+--skip_if_hypergraph  # Doesn't fail. ORDER BY is optimized away
+
+# If the transaction is still marked as allowing semi-consistent reads
+# when in SERIALIZABLE, this will crash when trying to unlock the
+# (non-matching) record.
+SET SESSION TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+DELETE FROM t1 WHERE a=2;
+
+DROP TABLE t1;
+SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;  # Return to default.
+
+
+--echo #
+--echo # Bug#32112403: UPDATE ON TEXT TYPE COLUMN MAY LEAVE IT EMPTY
+--echo #
+
+CREATE TABLE t1(i int, c1 string, c2 text)
+UNIQUE KEY(i)
+DISTRIBUTED BY HASH(i) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+
+INSERT INTO t1 VALUES (-1, 'twofiftyfive', '012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234');
+INSERT INTO t1 VALUES(0,'zero',
+'0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345');
+INSERT INTO t1 VALUES (1, 'one', '01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456');
+INSERT INTO t1 VALUES (2, 'two', '012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567');
+
+--echo # Ok because the c2 value can fit in c1
+UPDATE t1 SET c1 = c2 WHERE i = -1;
+
+--echo # Fails because these c2 value are too large to fit in c1
+DROP TABlE t1;

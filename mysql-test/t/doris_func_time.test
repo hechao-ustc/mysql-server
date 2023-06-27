@@ -1,0 +1,118 @@
+#
+# time functions
+#
+--disable_warnings
+drop table if exists t1;
+drop table if exists t2;
+drop table if exists t3;
+--enable_warnings
+
+# Set timezone to GMT-3, to make it possible to use "interval 3 hour"
+set time_zone="+03:00";
+
+select from_days(to_days("960101")),to_days(960201)-to_days("19960101"),to_days(date_add(curdate(), interval 1 day))-to_days(curdate()),weekday("1997-11-29");
+
+select now()-now(),weekday(curdate())-weekday(now()),unix_timestamp()-unix_timestamp(now());
+select from_unixtime(unix_timestamp("1994-03-02 10:11:12")),from_unixtime(unix_timestamp("1994-03-02 10:11:12"),"%Y-%m-%d %h:%i:%s"),from_unixtime(unix_timestamp("1994-03-02 10:11:12"))+0;
+select now()-curdate()*1000000-curtime();
+select date_format("1997-01-02 03:04:05", "%M %W %D %Y %y %m %d %h %i %s %w");
+select dayofmonth("1997-01-02"),dayofmonth(19970323);
+select month("1997-01-02"),year("98-02-03"),dayofyear("1997-12-31");
+select month("2001-02-00"),year("2001-00-00");
+select DAYOFYEAR("1997-03-03"), WEEK("1998-03-03"), QUARTER(980303);
+select HOUR("1997-03-03 23:03:22"), MINUTE("23:03:22"), SECOND(230322);
+
+# Test of week and yearweek
+select week(19980101),week(19970101),week(19980101,1),week(19970101,1);
+select week(19981231),week(19971231),week(19981231,1),week(19971231,1);
+select week(19950101),week(19950101,1);
+select yearweek('1981-12-31',1),yearweek('1982-01-01',1),yearweek('1982-12-31',1),yearweek('1983-01-01',1);
+select yearweek('1987-01-01',1),yearweek('1987-01-01');
+select week("2000-01-01",0) as '2000', week("2001-01-01",0) as '2001', week("2002-01-01",0) as '2002',week("2003-01-01",0) as '2003', week("2004-01-01",0) as '2004', week("2005-01-01",0) as '2005', week("2006-01-01",0) as '2006';
+select week("2000-01-06",0) as '2000', week("2001-01-06",0) as '2001', week("2002-01-06",0) as '2002',week("2003-01-06",0) as '2003', week("2004-01-06",0) as '2004', week("2005-01-06",0) as '2005', week("2006-01-06",0) as '2006';
+select week("2000-01-01",1) as '2000', week("2001-01-01",1) as '2001', week("2002-01-01",1) as '2002',week("2003-01-01",1) as '2003', week("2004-01-01",1) as '2004', week("2005-01-01",1) as '2005', week("2006-01-01",1) as '2006';
+select week("2000-01-06",1) as '2000', week("2001-01-06",1) as '2001', week("2002-01-06",1) as '2002',week("2003-01-06",1) as '2003', week("2004-01-06",1) as '2004', week("2005-01-06",1) as '2005', week("2006-01-06",1) as '2006';
+select yearweek("2000-01-01",0) as '2000', yearweek("2001-01-01",0) as '2001', yearweek("2002-01-01",0) as '2002',yearweek("2003-01-01",0) as '2003', yearweek("2004-01-01",0) as '2004', yearweek("2005-01-01",0) as '2005', yearweek("2006-01-01",0) as '2006';
+select yearweek("2000-01-06",0) as '2000', yearweek("2001-01-06",0) as '2001', yearweek("2002-01-06",0) as '2002',yearweek("2003-01-06",0) as '2003', yearweek("2004-01-06",0) as '2004', yearweek("2005-01-06",0) as '2005', yearweek("2006-01-06",0) as '2006';
+select yearweek("2000-01-01",1) as '2000', yearweek("2001-01-01",1) as '2001', yearweek("2002-01-01",1) as '2002',yearweek("2003-01-01",1) as '2003', yearweek("2004-01-01",1) as '2004', yearweek("2005-01-01",1) as '2005', yearweek("2006-01-01",1) as '2006';
+select yearweek("2000-01-06",1) as '2000', yearweek("2001-01-06",1) as '2001', yearweek("2002-01-06",1) as '2002',yearweek("2003-01-06",1) as '2003', yearweek("2004-01-06",1) as '2004', yearweek("2005-01-06",1) as '2005', yearweek("2006-01-06",1) as '2006';
+select week(19981231,2), week(19981231,3), week(20000101,2), week(20000101,3);
+select week(20001231,2),week(20001231,3);
+
+select week(19981231,0) as '0', week(19981231,1) as '1', week(19981231,2) as '2', week(19981231,3) as '3', week(19981231,4) as '4', week(19981231,5) as '5', week(19981231,6) as '6', week(19981231,7) as '7';
+select week(20000101,0) as '0', week(20000101,1) as '1', week(20000101,2) as '2', week(20000101,3) as '3', week(20000101,4) as '4', week(20000101,5) as '5', week(20000101,6) as '6', week(20000101,7) as '7';
+select week(20000106,0) as '0', week(20000106,1) as '1', week(20000106,2) as '2', week(20000106,3) as '3', week(20000106,4) as '4', week(20000106,5) as '5', week(20000106,6) as '6', week(20000106,7) as '7';
+select week(20001231,0) as '0', week(20001231,1) as '1', week(20001231,2) as '2', week(20001231,3) as '3', week(20001231,4) as '4', week(20001231,5) as '5', week(20001231,6) as '6', week(20001231,7) as '7';
+select week(20010101,0) as '0', week(20010101,1) as '1', week(20010101,2) as '2', week(20010101,3) as '3', week(20010101,4) as '4', week(20010101,5) as '5', week(20010101,6) as '6', week(20010101,7) as '7';
+
+select yearweek(20001231,0), yearweek(20001231,1), yearweek(20001231,2), yearweek(20001231,3), yearweek(20001231,4), yearweek(20001231,5), yearweek(20001231,6), yearweek(20001231,7);
+
+
+select date_format('1998-12-31','%x-%v'),date_format('1999-01-01','%x-%v');
+select date_format('1999-12-31','%x-%v'),date_format('2000-01-01','%x-%v');
+
+select dayname("1962-03-03"),dayname("1962-03-03")+0;
+select monthname("1972-03-04"),monthname("1972-03-04")+0;
+select date_format(concat('19980131',131415),'%H|%I|%k|%l|%i|%p|%r|%S|%T| %M|%W|%D|%Y|%y|%a|%b|%j|%m|%d|%h|%s|%w');
+select date_format(19980021000000,'%H|%I|%k|%l|%i|%p|%r|%S|%T| %M|%W|%D|%Y|%y|%a|%b|%j|%m|%d|%h|%s|%w');
+select date_add("1997-12-31 23:59:59",INTERVAL 1 SECOND);
+select date_add("1997-12-31 23:59:59",INTERVAL 1 MINUTE);
+select date_add("1997-12-31 23:59:59",INTERVAL 1 HOUR);
+select date_add("1997-12-31 23:59:59",INTERVAL 1 DAY);
+select date_add("1997-12-31 23:59:59",INTERVAL 1 MONTH);
+select date_add("1997-12-31 23:59:59",INTERVAL 1 YEAR);
+
+select date_sub("1998-01-01 00:00:00",INTERVAL 1 SECOND);
+select date_sub("1998-01-01 00:00:00",INTERVAL 1 MINUTE);
+select date_sub("1998-01-01 00:00:00",INTERVAL 1 HOUR);
+select date_sub("1998-01-01 00:00:00",INTERVAL 1 DAY);
+select date_sub("1998-01-01 00:00:00",INTERVAL 1 MONTH);
+select date_sub("1998-01-01 00:00:00",INTERVAL 1 YEAR);
+
+select date_add("1997-12-31 23:59:59",INTERVAL 100000 SECOND);
+select date_add("1997-12-31 23:59:59",INTERVAL -100000 MINUTE);
+select date_add("1997-12-31 23:59:59",INTERVAL 100000 HOUR);
+select date_add("1997-12-31 23:59:59",INTERVAL -100000 DAY);
+select date_add("1997-12-31 23:59:59",INTERVAL 100000 MONTH);
+select date_add("1997-12-31 23:59:59",INTERVAL -100000 YEAR);
+select "1997-12-31 23:59:59" + INTERVAL 1 SECOND;
+select INTERVAL 1 DAY + "1997-12-31";
+select "1998-01-01 00:00:00" - INTERVAL 1 SECOND;
+
+select date_sub("1998-01-02",INTERVAL 31 DAY);
+select date_add("1997-12-31",INTERVAL 1 SECOND);
+select date_add("1997-12-31",INTERVAL 1 DAY);
+select date_add(NULL,INTERVAL 100000 SECOND);
+select date_add("1997-12-31 23:59:59",INTERVAL NULL SECOND);
+select date_add("9999-12-31 23:59:59",INTERVAL 1 SECOND);
+select date_sub("0000-00-00 00:00:00",INTERVAL 1 SECOND);
+select date_add('1998-01-30',Interval 1 month);
+select date_add('1996-02-29',Interval '1' year);
+select extract(YEAR FROM "1999-01-02 10:11:12");
+select extract(DAY FROM "1999-01-02");
+select extract(HOUR FROM "1999-01-02 10:11:12");
+select extract(MINUTE FROM "10:11:12");
+select extract(SECOND FROM "1999-01-02 10:11:12");
+select extract(MONTH FROM "2001-02-00");
+
+#
+# test EXTRACT QUARTER (Bug #18100)
+#
+
+SELECT EXTRACT(QUARTER FROM '2004-01-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-02-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-03-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-04-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-05-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-06-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-07-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-08-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-09-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-10-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-11-15') AS quarter;
+SELECT EXTRACT(QUARTER FROM '2004-12-15') AS quarter;
+#
+# MySQL Bugs: #12356: DATE_SUB or DATE_ADD incorrectly returns null
+#
+SELECT DATE_SUB(str_to_date('9999-12-31 00:01:00','%Y-%m-%d %H:%i:%s'), INTERVAL 1 MINUTE);
+SELECT DATE_ADD(str_to_date('9999-12-30 23:59:00','%Y-%m-%d %H:%i:%s'), INTERVAL 1 MINUTE);

@@ -1,0 +1,105 @@
+################################################################################
+#                                                                              #
+# WL13784 - Create auto_increment PK on table creation when no PK is specified #
+#                                                                              #
+################################################################################
+
+--echo ##################################################################################
+--echo # Test cases to verify CREATE TABLE with sql_generate_invisible_primary_key = OFF.
+--echo ##################################################################################
+
+--echo # Test case to check if table is created without PK in this case.
+CREATE TABLE t1(f1 INT, f2 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+SHOW KEYS FROM t1;
+DROP TABLE t1;
+
+
+--echo ##################################################################################
+--echo # Test cases to verify PK generation with sql_generate_invisible_primary_key = ON.
+--echo ##################################################################################
+--echo # Test case to check table creation with an explicit primary key.
+CREATE TABLE t1 (f1 INT, f2 INT)
+UNIQUE KEY(f1)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+SHOW KEYS FROM t1;
+DROP TABLE t1;
+
+--echo # Test case to verify partition table creation with a primary key.
+CREATE TABLE t1 (f1 INT, f2 INT)
+UNIQUE KEY(f1, f2)
+PARTITION BY RANGE (f2)
+(
+    PARTITION p0 VALUES LESS THAN ("2011"),
+    PARTITION p1 VALUES LESS THAN ("2022")
+)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+DROP TABLE t1;
+
+
+--echo # Test case to verify PK generation on InnoDB PK-less user table.
+--echo # PK should be generated in this case.
+CREATE TABLE t1(f1 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+SHOW KEYS FROM t1;
+DROP TABLE t1;
+
+--echo # Test case to verify PK generation on InnoDB table with unique key
+--echo # based implicit primary key. PK should be generated in this case.
+CREATE TABLE t1(f1 INT NOT NULL)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+SHOW KEYS FROM t1;
+DROP TABLE t1;
+
+--echo # Test case to verify PK generation on InnoDB table with if not exists
+--echo # clause.
+CREATE TABLE t1(f1 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+CREATE TABLE IF NOT EXISTS t1 (f1 INT, f2 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+DROP TABLE t1;
+
+CREATE VIEW t1 AS SELECT 1;
+CREATE TABLE IF NOT EXISTS t1 (f1 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+SHOW CREATE VIEW t1;
+DROP VIEW t1;
+
+--echo # Test case to check primary key generation with CREATE TABLE ... SELECT
+CREATE TABLE t1 (f1 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+DROP TABLE t1;

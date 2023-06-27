@@ -1,0 +1,108 @@
+--echo # Test of SQL window functions.
+--echo # ----------------------------------------------------------------------
+SET NAMES utf8;
+
+--echo
+--echo Flag unsupported aggregates as window functions
+--echo
+
+drop table if exists t;
+drop table if exists t1;
+drop table if exists t2;
+DROP TABLE if exists tb;
+DROP TABLE if exists ss;
+
+--echo Single window function (plus ORDER BY).
+CREATE TABLE t(i INT, j INT)
+DISTRIBUTED BY HASH(i) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+INSERT INTO t VALUES (1,1);
+INSERT INTO t VALUES (1,4);
+INSERT INTO t VALUES (1,2);
+INSERT INTO t VALUES (1,4);
+ANALYZE TABLE t;
+
+
+# From then on, we'll be counting row reads.
+
+--echo With LIMIT
+SELECT i, j, SUM(i+j) OVER (ORDER BY i DESC ROWS UNBOUNDED PRECEDING) FROM t LIMIT 3;
+--echo With LIMIT when last tmp file step is optimized away
+CREATE TABLE t1 (i INT)
+DISTRIBUTED BY HASH(i) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+INSERT INTO t1 (i) VALUES (1);
+INSERT INTO t1 (i) VALUES (2);
+INSERT INTO t1 (i) VALUES (3);
+INSERT INTO t1 (i) VALUES (4);
+INSERT INTO t1 (i) VALUES (5);
+SELECT i, SUM(i) OVER (ORDER BY i ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING) FROM t1 LIMIT 3;
+DROP TABLE t1;
+
+--echo Single ordered partition
+# NOTE: V... means queries that are deterministic and have been verified against Oracle.
+#V...
+SELECT i, j, SUM(i+j) OVER (ORDER BY j ROWS UNBOUNDED PRECEDING) foo FROM t;
+SELECT i, j, SUM(i+j) OVER (ORDER BY j ROWS UNBOUNDED PRECEDING) foo FROM t ORDER BY foo;
+SELECT i, j, SUM(i+j) OVER (ORDER BY j ROWS UNBOUNDED PRECEDING) foo FROM t ORDER BY foo DESC;
+
+SELECT i, j, SUM(i+j) OVER (ORDER BY j DESC ROWS UNBOUNDED PRECEDING) foo FROM t;
+
+--echo View with window function
+CREATE VIEW v AS
+SELECT i, j, SUM(i+j) OVER (ORDER BY j DESC ROWS UNBOUNDED PRECEDING) foo FROM t;
+SHOW CREATE VIEW v;
+SELECT * FROM v;
+DROP VIEW v;
+
+SELECT i, j, SUM(i+j) OVER (ORDER BY j DESC ROWS UNBOUNDED PRECEDING) foo FROM t ORDER BY foo;
+SELECT i, j, SUM(i+j) OVER (ORDER BY j DESC ROWS UNBOUNDED PRECEDING) foo FROM t ORDER BY foo DESC;
+#...V
+
+DROP TABLE t;
+
+CREATE TABLE t(i INT, j INT, k INT)
+DISTRIBUTED BY HASH(i) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+INSERT INTO t VALUES (1,1,1);
+INSERT INTO t VALUES (1,4,1);
+INSERT INTO t VALUES (1,2,1);
+INSERT INTO t VALUES (1,4,1);
+INSERT INTO t VALUES (1,1,2);
+INSERT INTO t VALUES (1,4,2);
+INSERT INTO t VALUES (1,2,2);
+INSERT INTO t VALUES (1,4,2);
+INSERT INTO t VALUES (1,1,3);
+INSERT INTO t VALUES (1,4,3);
+INSERT INTO t VALUES (1,2,3);
+INSERT INTO t VALUES (1,4,3);
+INSERT INTO t VALUES (1,1,4);
+INSERT INTO t VALUES (1,4,4);
+INSERT INTO t VALUES (1,2,4);
+INSERT INTO t VALUES (1,4,4);
+
+--echo ----------------------------------------------------------------------
+--echo -    Combination with GROUP BY
+--echo ----------------------------------------------------------------------
+
+--echo Show difference in binding of colums
+CREATE TABLE tb(a INT, b INT)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+
+--echo Grouping version of SUM can refer to ungrouped column
+SELECT a, SUM(b) FROM tb GROUP BY a;
+
+--echo Windowing version of SUM cannot refer to ungrouped column since the
+--echo grouping has already happened by the the the windowing starts
+--echo and each row now represents multiple aggregated values of b
+
+DROP TABLE tb;

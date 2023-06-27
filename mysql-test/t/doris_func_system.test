@@ -1,0 +1,17 @@
+ #Get deafult engine value
+--let $DEFAULT_ENGINE = `select @@global.default_storage_engine`
+
+#
+# system functions
+#
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+select database();
+select database() = "test";
+
+select user() like "%@%";
+
+select version()>="3.23.29";
+explain select database(), user();
+
+select TRUE,FALSE,NULL;
+SET sql_mode = default;

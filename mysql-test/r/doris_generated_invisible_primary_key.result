@@ -1,0 +1,192 @@
+##################################################################################
+# Test cases to verify CREATE TABLE with sql_generate_invisible_primary_key = OFF.
+##################################################################################
+# Test case to check if table is created without PK in this case.
+CREATE TABLE t1(f1 INT, f2 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `f1` int(11) NULL,
+  `f2` int(11) NULL
+) ENGINE=OLAP
+DUPLICATE KEY(`f1`, `f2`)
+COMMENT 'OLAP'
+DISTRIBUTED BY HASH(`f1`) BUCKETS 1
+PROPERTIES (
+"replication_allocation" = "tag.location.default: 1",
+"storage_format" = "V2",
+"light_schema_change" = "true",
+"disable_auto_compaction" = "false"
+);
+SHOW KEYS FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Properties
+DROP TABLE t1;
+##################################################################################
+# Test cases to verify PK generation with sql_generate_invisible_primary_key = ON.
+##################################################################################
+# Test case to check table creation with an explicit primary key.
+CREATE TABLE t1 (f1 INT, f2 INT)
+UNIQUE KEY(f1)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `f1` int(11) NULL,
+  `f2` int(11) NULL
+) ENGINE=OLAP
+UNIQUE KEY(`f1`)
+COMMENT 'OLAP'
+DISTRIBUTED BY HASH(`f1`) BUCKETS 1
+PROPERTIES (
+"replication_allocation" = "tag.location.default: 1",
+"storage_format" = "V2",
+"light_schema_change" = "true",
+"disable_auto_compaction" = "false"
+);
+SHOW KEYS FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Properties
+DROP TABLE t1;
+# Test case to verify partition table creation with a primary key.
+CREATE TABLE t1 (f1 INT, f2 INT)
+UNIQUE KEY(f1, f2)
+PARTITION BY RANGE (f2)
+(
+PARTITION p0 VALUES LESS THAN ("2011"),
+PARTITION p1 VALUES LESS THAN ("2022")
+)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `f1` int(11) NULL,
+  `f2` int(11) NULL
+) ENGINE=OLAP
+UNIQUE KEY(`f1`, `f2`)
+COMMENT 'OLAP'
+PARTITION BY RANGE(`f2`)
+(PARTITION p0 VALUES [("-2147483648"), ("2011")),
+PARTITION p1 VALUES [("2011"), ("2022")))
+DISTRIBUTED BY HASH(`f1`) BUCKETS 1
+PROPERTIES (
+"replication_allocation" = "tag.location.default: 1",
+"storage_format" = "V2",
+"light_schema_change" = "true",
+"disable_auto_compaction" = "false"
+);
+DROP TABLE t1;
+# Test case to verify PK generation on InnoDB PK-less user table.
+# PK should be generated in this case.
+CREATE TABLE t1(f1 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `f1` int(11) NULL
+) ENGINE=OLAP
+DUPLICATE KEY(`f1`)
+COMMENT 'OLAP'
+DISTRIBUTED BY HASH(`f1`) BUCKETS 1
+PROPERTIES (
+"replication_allocation" = "tag.location.default: 1",
+"storage_format" = "V2",
+"light_schema_change" = "true",
+"disable_auto_compaction" = "false"
+);
+SHOW KEYS FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Properties
+DROP TABLE t1;
+# Test case to verify PK generation on InnoDB table with unique key
+# based implicit primary key. PK should be generated in this case.
+CREATE TABLE t1(f1 INT NOT NULL)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `f1` int(11) NOT NULL
+) ENGINE=OLAP
+DUPLICATE KEY(`f1`)
+COMMENT 'OLAP'
+DISTRIBUTED BY HASH(`f1`) BUCKETS 1
+PROPERTIES (
+"replication_allocation" = "tag.location.default: 1",
+"storage_format" = "V2",
+"light_schema_change" = "true",
+"disable_auto_compaction" = "false"
+);
+SHOW KEYS FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Properties
+DROP TABLE t1;
+# Test case to verify PK generation on InnoDB table with if not exists
+# clause.
+CREATE TABLE t1(f1 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+CREATE TABLE IF NOT EXISTS t1 (f1 INT, f2 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `f1` int(11) NULL
+) ENGINE=OLAP
+DUPLICATE KEY(`f1`)
+COMMENT 'OLAP'
+DISTRIBUTED BY HASH(`f1`) BUCKETS 1
+PROPERTIES (
+"replication_allocation" = "tag.location.default: 1",
+"storage_format" = "V2",
+"light_schema_change" = "true",
+"disable_auto_compaction" = "false"
+);
+DROP TABLE t1;
+CREATE VIEW t1 AS SELECT 1;
+CREATE TABLE IF NOT EXISTS t1 (f1 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+SHOW CREATE VIEW t1;
+View	Create View	character_set_client	collation_connection
+t1	CREATE VIEW `t1` COMMENT 'VIEW' AS SELECT 1 AS `1`;	utf8	utf8_general_ci
+DROP VIEW t1;
+# Test case to check primary key generation with CREATE TABLE ... SELECT
+CREATE TABLE t1 (f1 INT)
+DISTRIBUTED BY HASH(f1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `f1` int(11) NULL
+) ENGINE=OLAP
+DUPLICATE KEY(`f1`)
+COMMENT 'OLAP'
+DISTRIBUTED BY HASH(`f1`) BUCKETS 1
+PROPERTIES (
+"replication_allocation" = "tag.location.default: 1",
+"storage_format" = "V2",
+"light_schema_change" = "true",
+"disable_auto_compaction" = "false"
+);
+DROP TABLE t1;

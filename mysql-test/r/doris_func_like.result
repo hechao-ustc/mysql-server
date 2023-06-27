@@ -1,0 +1,113 @@
+drop table if exists t1;
+create table t1 (a varchar(10))
+UNIQUE KEY(`a`)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+  );
+insert into t1 values ("a"),("abc"),("abcd"),("hello"),("test");
+analyze table t1;
+explain select * from t1 where a like 'abc%';
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    `default_cluster:test`.`t1`.`a`
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. No AggregateInfo
+     PREDICATES: `a` LIKE 'abc%' AND `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=22517
+     cardinality=0, avgRowSize=17.0, numNodes=1
+explain select * from t1 where a like concat('abc','%');
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    `default_cluster:test`.`t1`.`a`
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. No AggregateInfo
+     PREDICATES: `a` LIKE concat('abc', '%') AND `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=22517
+     cardinality=0, avgRowSize=17.0, numNodes=1
+select * from t1 where a like "abc%";
+a
+abc
+abcd
+select * from t1 where a like concat("abc","%");
+a
+abc
+abcd
+select * from t1 where a like "ABC%";
+a
+select * from t1 where a like "test%";
+a
+test
+select * from t1 where a like "te_t";
+a
+test
+select * from t1 where a like "%a%";
+a
+a
+abc
+abcd
+select * from t1 where a like "%abcd%";
+a
+abcd
+select * from t1 where a like "%abc\d%";
+a
+abcd
+drop table t1;
+create table t1 (a datetime)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+  );
+insert into t1 values ('2004-03-11 12:00:21');
+select * from t1 where a like '2004-03-11 12:00:21';
+a
+2004-03-11 12:00:21
+drop table t1;
+#
+# Bug#29904751: LIKE CONDITION FOR DATE COLUMN RETURNS ERROR
+#
+CREATE TABLE t(col1 DATE)
+DISTRIBUTED BY HASH(col1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+   );
+INSERT INTO t(col1) VALUES('2019-06-13'), ('2019-07-13');
+SELECT * FROM t WHERE col1 LIKE '2019%';
+col1
+2019-06-13
+2019-07-13
+SELECT * FROM t WHERE col1 LIKE '2019-06-1%';
+col1
+2019-06-13
+DROP TABLE t;
+#
+# Bug#26086751: LIKE LOSES ESCAPE CLAUSE WHEN USED IN VIEW
+# Bug#29224931: LIKE ... ESCAPE IS NOT WRITTEN TO DICTIONARY
+# Bug#30211596: `EXPLAIN ... LIKE ... ESCAPE` DOESN'T OUTPUT `ESCAPE`
+#               CLAUSE IN THE WARNING
+#
+# Bug#33852756: ESCAPE keyword with non-string values
+CREATE TABLE t1(c1 VARCHAR(20) NOT NULL)
+DISTRIBUTED BY HASH(c1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+   );
+INSERT INTO t1 VALUES ('100'), ('abc\\d');
+SELECT * FROM t1 WHERE c1 LIKE c1;
+c1
+100
+SELECT c1 LIKE c1 AS l FROM t1;
+l
+1
+0
+DROP TABLE t1;

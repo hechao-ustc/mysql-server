@@ -1,0 +1,828 @@
+drop table if exists t1;
+drop table if exists t2;
+drop table if exists t3;
+drop table if exists t4;
+drop table if exists t5;
+drop table if exists t6;
+CREATE TABLE t1 (a int not null, b char (10) not null)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t1 values(1,'a'),(2,'b'),(3,'c'),(3,'c');
+CREATE TABLE t2 (a int not null, b char (10) not null)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t2 values (3,'c'),(4,'d'),(5,'f'),(6,'e');
+analyze table t1;
+Catalog_Name	DB_Name	Table_Name	Columns	Job_Id
+internal	default_cluster:test	t1	[a,b]	166350
+analyze table t2;
+Catalog_Name	DB_Name	Table_Name	Columns	Job_Id
+internal	default_cluster:test	t2	[a,b]	166355
+select a,b from t1 union distinct select a,b from t2;
+a	b
+1	a
+2	b
+3	c
+4	d
+5	f
+6	e
+select a,b from t1 union all select a,b from t2;
+a	b
+1	a
+2	b
+3	c
+3	c
+3	c
+4	d
+5	f
+6	e
+select a,b from t1 union all select a,b from t2 order by b;
+a	b
+1	a
+2	b
+3	c
+3	c
+3	c
+4	d
+5	f
+6	e
+select a,b from t1 union all select a,b from t2 union select 7,'g';
+a	b
+1	a
+2	b
+3	c
+4	d
+5	f
+6	e
+7	g
+select 0,'#' union select a,b from t1 union all select a,b from t2 union select 7,'gg';
+0	'#'
+0	#
+1	a
+2	b
+3	c
+4	d
+5	f
+6	e
+7	gg
+select a,b from t1 union select a,b from t1;
+a	b
+1	a
+2	b
+3	c
+select 't1',b,count(*) from t1 group by b UNION select 't2',b,count(*) from t2 group by b;
+'t1'	b	count(*)
+t1	a	1
+t1	b	1
+t1	c	2
+t2	c	1
+t2	d	1
+t2	e	1
+t2	f	1
+(select a,b from t1 limit 2)  union all (select a,b from t2 order by a) limit 4;
+a	b
+1	a
+2	b
+3	c
+4	d
+(select a,b from t1 limit 2)  union all (select a,b from t2 order by a limit 1);
+a	b
+1	a
+2	b
+3	c
+(select a,b from t1 limit 2)  union all (select a,b from t2 order by a limit 1) order by b desc;
+a	b
+3	c
+2	b
+1	a
+explain (select a,b from t1 limit 2)  union all (select a,b from t2 order by a limit 1) order by b desc;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 9> <slot 6> `a` <slot 4> `a`
+    <slot 8> <slot 7> `b` <slot 5> `b`
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  8:VMERGING-EXCHANGE
+     offset: 0
+     limit: 9223372036854775807
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `a`, `b`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 08
+    UNPARTITIONED
+
+  4:VTOP-N
+  |  order by: <slot 8> <slot 7> `b` <slot 5> `b` DESC
+  |  offset: 0
+  |  limit: 9223372036854775807
+  |  
+  0:VUNION
+  |  
+  |----7:VEXCHANGE
+  |       offset: 0
+  |       limit: 1
+  |    
+  6:VEXCHANGE
+     offset: 0
+     limit: 2
+
+PLAN FRAGMENT 2
+
+  PARTITION: UNPARTITIONED
+
+  STREAM DATA SINK
+    EXCHANGE ID: 07
+    HASH_PARTITIONED: <slot 4> `a`, <slot 5> `b`
+
+  5:VMERGING-EXCHANGE
+     offset: 0
+     limit: 1
+
+PLAN FRAGMENT 3
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 05
+    UNPARTITIONED
+
+  3:VTOP-N
+  |  order by: <slot 4> `a` ASC
+  |  offset: 0
+  |  limit: 1
+  |  
+  2:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     SORT INFO:
+          `a`
+     SORT LIMIT: 1
+     partitions=1/1, tablets=1/1, tabletList=166347
+     cardinality=0, avgRowSize=20.0, numNodes=1
+
+PLAN FRAGMENT 4
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 06
+    HASH_PARTITIONED: `a`, `b`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=166341
+     cardinality=0, avgRowSize=20.0, numNodes=1
+     limit: 2
+select count(*) from (
+(select                      a,b from t1 limit 2)  union all (select a,b from t2 order by a)) q;
+count(*)
+6
+select count(*) from (
+select                      a,b from t1  union all select a,b from t2) q;
+count(*)
+8
+explain select a,b from t1 union all select a,b from t2;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `a` `a`
+    <slot 5> `b` `b`
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  5:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `a`, `b`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 05
+    UNPARTITIONED
+
+  0:VUNION
+  |  
+  |----4:VEXCHANGE
+  |       offset: 0
+  |    
+  3:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 2
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 04
+    HASH_PARTITIONED: `a`, `b`
+
+  2:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=166347
+     cardinality=0, avgRowSize=20.0, numNodes=1
+
+PLAN FRAGMENT 3
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 03
+    HASH_PARTITIONED: `a`, `b`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=166341
+     cardinality=0, avgRowSize=20.0, numNodes=1
+create table t3
+PROPERTIES (
+"replication_num" = "1"
+)
+as select a,b from t1 union all select a,b from t2;
+insert into t3 select a,b from t1 union all select a,b from t2;
+drop table t1;
+drop table t2;
+drop table t3;
+create table t1 (a int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+create table t2 (a int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t1 values (1),(2),(3),(4),(5);
+insert into t2 values (11),(12),(13),(14),(15);
+(select * from t1 limit 2) union (select * from t2 limit 3) limit 4;
+a
+1
+2
+11
+12
+(select * from t1 limit 2) union (select * from t2 limit 3);
+a
+1
+2
+11
+12
+13
+(select * from t1 limit 2) union (select * from t2 limit 20,3);
+a
+1
+2
+set SQL_SELECT_LIMIT=2;
+(select * from t1 limit 1) union (select * from t2 limit 3);
+a
+1
+11
+12
+13
+(select * from t1 limit 3) intersect (select * from t1 limit 3);
+a
+3
+1
+2
+(select * from t1 limit 4) except (select * from t1 limit 1);
+a
+3
+4
+2
+set SQL_SELECT_LIMIT=DEFAULT;
+drop table t1;
+drop table t2;
+CREATE TABLE t1 (
+cid smallint(5) NOT NULL default '0',
+cv varchar(250) NOT NULL default ''
+)
+UNIQUE KEY(cid)
+DISTRIBUTED BY HASH(cid) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t1 VALUES (8,'dummy');
+CREATE TABLE t2 (
+cid bigint(20) NOT NULL,
+cap varchar(255) NOT NULL default ''
+)
+UNIQUE KEY(cid)
+DISTRIBUTED BY HASH(cid) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+CREATE TABLE t3 (
+gid bigint(20) NOT NULL,
+gn varchar(255) NOT NULL default '',
+must tinyint(4) default NULL
+)
+UNIQUE KEY(gid)
+DISTRIBUTED BY HASH(gid) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t3 VALUES (1,'V1',NULL);
+CREATE TABLE t4 (
+uid bigint(20) NOT NULL default '0',
+gid bigint(20) default NULL,
+rid bigint(20) default NULL,
+cid bigint(20) default NULL
+)
+UNIQUE KEY(uid,gid,rid,cid)
+DISTRIBUTED BY HASH(uid) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t4 VALUES (1,1,NULL,NULL);
+CREATE TABLE t5 (
+rid bigint(20) NOT NULL,
+rl varchar(255) NOT NULL default ''
+)
+UNIQUE KEY(rid)
+DISTRIBUTED BY HASH(rid) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+CREATE TABLE t6 (
+uid bigint(20) NOT NULL,
+un varchar(250) NOT NULL default '',
+uc smallint(5) NOT NULL default '0'
+)
+UNIQUE KEY(uid)
+DISTRIBUTED BY HASH(uid) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t6 VALUES (1,'test',8);
+SELECT t4.uid, t5.rl, t3.gn as g1, t4.cid, t4.gid as gg FROM t3, t6, t1, t4 left join t5 on t5.rid = t4.rid left join t2 on t2.cid = t4.cid WHERE t3.gid=t4.gid AND t6.uid = t4.uid AND t6.uc  = t1.cid AND t1.cv = "dummy" AND t6.un = "test";
+uid	rl	g1	cid	gg
+1	NULL	V1	NULL	1
+SELECT t4.uid, t5.rl, t3.gn as g1, t4.cid, t4.gid as gg FROM t3, t6, t1, t4 left join t5 on t5.rid = t4.rid left join t2 on t2.cid = t4.cid WHERE t3.gid=t4.gid AND t6.uid = t4.uid AND t3.must IS NOT NULL AND t6.uc  = t1.cid AND t1.cv = "dummy" AND t6.un = "test";
+uid	rl	g1	cid	gg
+(SELECT t4.uid, t5.rl, t3.gn as g1, t4.cid, t4.gid as gg FROM t3, t6, t1, t4 left join t5 on t5.rid = t4.rid left join t2 on t2.cid = t4.cid WHERE t3.gid=t4.gid AND t6.uid = t4.uid AND t3.must IS NOT NULL AND t6.uc  = t1.cid AND t1.cv = "dummy" AND t6.un = "test") UNION (SELECT t4.uid, t5.rl, t3.gn as g1, t4.cid, t4.gid as gg FROM t3, t6, t1, t4 left join t5 on t5.rid = t4.rid left join t2 on t2.cid = t4.cid WHERE t3.gid=t4.gid AND t6.uid = t4.uid AND t6.uc  = t1.cid AND t1.cv = "dummy" AND t6.un = "test");
+uid	rl	g1	cid	gg
+1	NULL	V1	NULL	1
+drop table t1;
+drop table t2;
+drop table t3;
+drop table t4;
+drop table t5;
+drop table t6;
+CREATE TABLE t1 (a int not null, b char (10) not null)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t1 values(1,'a'),(2,'b'),(3,'c'),(3,'c');
+CREATE TABLE t2 (a int not null, b char (10) not null)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t2 values (3,'c'),(4,'d'),(5,'f'),(6,'e');
+create table t3
+PROPERTIES (
+"replication_num" = "1"
+)
+as select a,b from t1 union select a,b from t2;
+create table t4
+PROPERTIES (
+"replication_num" = "1"
+ )
+as (select a,b from t1) union (select a,b from t2) limit 2;
+insert into  t4 select a,b from t1 union select a,b from t2;
+select * from t3;
+a	b
+3	c
+6	e
+5	f
+1	a
+2	b
+4	d
+select * from t4;
+a	b
+4	d
+3	c
+6	e
+1	a
+1	a
+5	f
+2	b
+2	b
+drop table t1;
+drop table t2;
+drop table t3;
+drop table t4;
+create table t1 (a int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t1 values (1),(2),(3);
+create table t2 (a int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t2 values (3),(4),(5);
+SELECT COUNT(*) FROM (
+(SELECT                     * FROM t1) UNION all (SELECT * FROM t2)) q;
+count(*)
+6
+SELECT COUNT(*) FROM (
+(SELECT                     * FROM t1 LIMIT 1) UNION all (SELECT * FROM t2)) q;
+count(*)
+4
+SELECT COUNT(*) FROM (
+(SELECT                     * FROM t1 LIMIT 1) UNION all (SELECT * FROM t2)) q;
+count(*)
+4
+SELECT COUNT(*) FROM (
+(SELECT                     * FROM t1) UNION all (SELECT * FROM t2 LIMIT 1)) q;
+count(*)
+4
+SELECT COUNT(*) FROM (
+(SELECT                     * FROM t1 LIMIT 1) UNION SELECT * FROM t2) q;
+count(*)
+4
+SELECT COUNT(*) FROM (
+SELECT                     * FROM t1 UNION SELECT * FROM t2) q;
+count(*)
+5
+SELECT COUNT(*) FROM (
+SELECT                     * FROM t1 UNION SELECT * FROM t2) q;
+count(*)
+5
+SELECT * FROM t1 UNION SELECT * FROM t2 ORDER BY a desc LIMIT 1;
+a
+1
+2
+3
+5
+(SELECT * FROM t1 ORDER by a) UNION ALL (SELECT * FROM t2 ORDER BY a) ORDER BY A desc LIMIT 4;
+a
+5
+4
+3
+3
+drop table t1;
+drop table t2;
+create table t1 (a int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t1 values (0), (3), (1), (2);
+analyze table t1;
+Catalog_Name	DB_Name	Table_Name	Columns	Job_Id
+internal	default_cluster:test	t1	[a]	166518
+explain (select * from t1) union (select * from t1) order by a;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 3> <slot 2> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t1`.`a`
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  9:VMERGING-EXCHANGE
+     offset: 0
+     limit: 9223372036854775807
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: <slot 2> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t1`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 09
+    UNPARTITIONED
+
+  4:VTOP-N
+  |  order by: <slot 3> <slot 2> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t1`.`a` ASC
+  |  offset: 0
+  |  limit: 9223372036854775807
+  |  
+  8:VAGGREGATE (merge finalize)
+  |  group by: <slot 2> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t1`.`a`
+  |  cardinality=-1
+  |  
+  7:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 2
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 07
+    HASH_PARTITIONED: <slot 2> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t1`.`a`
+
+  3:VAGGREGATE (update serialize)
+  |  STREAMING
+  |  group by: <slot 2> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t1`.`a`
+  |  cardinality=-1
+  |  
+  0:VUNION
+  |  
+  |----6:VEXCHANGE
+  |       offset: 0
+  |    
+  5:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 3
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 06
+    HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  2:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=166515
+     cardinality=0, avgRowSize=4.0, numNodes=1
+
+PLAN FRAGMENT 4
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 05
+    HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=166515
+     cardinality=0, avgRowSize=4.0, numNodes=1
+drop table t1;
+create table t1 (a int not null, b int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+create table t2 (a int not null, b int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t1 values (1, 1),(2, 2),(3, 2),(4, 3);
+insert into t2 values (1, 10),(2, 11),(3, 12),(4, 13);
+analyze table t1;
+Catalog_Name	DB_Name	Table_Name	Columns	Job_Id
+internal	default_cluster:test	t1	[a,b]	166536
+explain (select * from t1 where a=1) union (select * from t2 where a=1);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t2`.`a`
+    <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t2`.`b`
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  8:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t2`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t2`.`b`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 08
+    UNPARTITIONED
+
+  7:VAGGREGATE (merge finalize)
+  |  group by: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t2`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t2`.`b`
+  |  cardinality=-1
+  |  
+  6:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 2
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 06
+    HASH_PARTITIONED: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t2`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t2`.`b`
+
+  3:VAGGREGATE (update serialize)
+  |  STREAMING
+  |  group by: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t2`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t2`.`b`
+  |  cardinality=-1
+  |  
+  0:VUNION
+  |  
+  |----5:VEXCHANGE
+  |       offset: 0
+  |    
+  4:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 3
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 05
+    HASH_PARTITIONED: `default_cluster:test`.`t2`.`a`, `default_cluster:test`.`t2`.`b`
+
+  2:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     PREDICATES: `a` = 1
+     partitions=1/1, tablets=1/1, tabletList=166530
+     cardinality=0, avgRowSize=8.0, numNodes=1
+
+PLAN FRAGMENT 4
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 04
+    HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     PREDICATES: `a` = 1
+     partitions=1/1, tablets=1/1, tabletList=166525
+     cardinality=0, avgRowSize=8.0, numNodes=1
+explain (select * from t1 where a=5) union (select * from t2 where a=1);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t2`.`a`
+    <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t2`.`b`
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  8:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t2`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t2`.`b`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 08
+    UNPARTITIONED
+
+  7:VAGGREGATE (merge finalize)
+  |  group by: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t2`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t2`.`b`
+  |  cardinality=-1
+  |  
+  6:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 2
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 06
+    HASH_PARTITIONED: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t2`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t2`.`b`
+
+  3:VAGGREGATE (update serialize)
+  |  STREAMING
+  |  group by: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t2`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t2`.`b`
+  |  cardinality=-1
+  |  
+  0:VUNION
+  |  
+  |----5:VEXCHANGE
+  |       offset: 0
+  |    
+  4:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 3
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 05
+    HASH_PARTITIONED: `default_cluster:test`.`t2`.`a`, `default_cluster:test`.`t2`.`b`
+
+  2:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     PREDICATES: `a` = 1
+     partitions=1/1, tablets=1/1, tabletList=166530
+     cardinality=0, avgRowSize=8.0, numNodes=1
+
+PLAN FRAGMENT 4
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 04
+    HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     PREDICATES: `a` = 5
+     partitions=1/1, tablets=1/1, tabletList=166525
+     cardinality=0, avgRowSize=8.0, numNodes=1
+(select * from t1 where a=5) union (select * from t2 where a=1);
+a	b
+1	10
+(select * from t1 where a=5 and a=6) union (select * from t2 where a=1);
+a	b
+1	10
+(select t1.a,t1.b from t1,t2 where t1.a=5) union (select * from t2 where a=1);
+a	b
+1	10
+(select * from t1 where a=1) union (select t1.a,t2.a from t1,t2 where t1.a=t2.a);
+a	b
+1	1
+2	2
+3	3
+4	4
+explain (select * from t1 where a=1) union (select * from t1 where b=1);
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t1`.`a`
+    <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t1`.`b`
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  8:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t1`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t1`.`b`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 08
+    UNPARTITIONED
+
+  7:VAGGREGATE (merge finalize)
+  |  group by: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t1`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t1`.`b`
+  |  cardinality=-1
+  |  
+  6:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 2
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 06
+    HASH_PARTITIONED: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t1`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t1`.`b`
+
+  3:VAGGREGATE (update serialize)
+  |  STREAMING
+  |  group by: <slot 4> `default_cluster:test`.`t1`.`a` `default_cluster:test`.`t1`.`a`, <slot 5> `default_cluster:test`.`t1`.`b` `default_cluster:test`.`t1`.`b`
+  |  cardinality=-1
+  |  
+  0:VUNION
+  |  
+  |----5:VEXCHANGE
+  |       offset: 0
+  |    
+  4:VEXCHANGE
+     offset: 0
+
+PLAN FRAGMENT 3
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 05
+    HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  2:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     PREDICATES: `b` = 1
+     partitions=1/1, tablets=1/1, tabletList=166525
+     cardinality=0, avgRowSize=8.0, numNodes=1
+
+PLAN FRAGMENT 4
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 04
+    HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     PREDICATES: `a` = 1
+     partitions=1/1, tablets=1/1, tabletList=166525
+     cardinality=0, avgRowSize=8.0, numNodes=1
+drop table t1;
+drop table t2;

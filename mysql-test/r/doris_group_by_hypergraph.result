@@ -1,0 +1,1057 @@
+#
+# Bug#32980875: WL#14422: ASSERTION `FALSE' FAILED|SQL/BASIC_ROW_ITERATORS.H
+#
+CREATE TABLE t (x INTEGER)
+DISTRIBUTED BY HASH(x) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t VALUES (1), (2), (3);
+ANALYZE TABLE t;
+EXPLAIN
+SELECT MIN(t2.x), t1.x
+FROM t t1 JOIN t t2 USING (x)
+GROUP BY t2.x, t1.x;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> min(<slot 6>)
+    <slot 3> `t1`.`x`
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t`.`x`
+
+  VRESULT SINK
+
+  3:VAGGREGATE (update finalize)
+  |  output: min(<slot 6>)
+  |  group by: <slot 6>, <slot 5>
+  |  cardinality=-1
+  |  
+  2:VHASH JOIN
+  |  join op: INNER JOIN(COLOCATE[])[]
+  |  equal join conjunct: `t1`.`x` = `t2`.`x`
+  |  runtime filters: RF000[in_or_bloom] <- `t2`.`x`
+  |  cardinality=0
+  |  vec output tuple id: 3
+  |  vIntermediate tuple ids: 4 5 
+  |  output slot ids: 5 6 
+  |  hash output slot ids: 0 1 
+  |  
+  |----1:VOlapScanNode
+  |       TABLE: default_cluster:test.t(t), PREAGGREGATION: ON
+  |       partitions=1/1, tablets=1/1, tabletList=28617
+  |       cardinality=0, avgRowSize=4.0, numNodes=1
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t(t), PREAGGREGATION: ON
+     runtime filters: RF000[in_or_bloom] -> `t1`.`x`
+     partitions=1/1, tablets=1/1, tabletList=28617
+     cardinality=0, avgRowSize=4.0, numNodes=1
+DROP TABLE t;
+#
+# Bug #34670701 Too many ROLLUP rows with hypergraph
+#
+CREATE TABLE t1(
+a INT,
+b INT,
+c INT,
+d INT,
+e INT
+)
+UNIQUE KEY(a,b)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t1 VALUES (0,0,0,0,1), (1,0,1,0,1), (0,1,2,0,1), (2,0,2,0,1), (4,0,0,0,1);
+ANALYZE TABLE t1;
+EXPLAIN SELECT a,c,d,sum(e) FROM t1 GROUP BY a,c,d;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `a`
+    <slot 5> `c`
+    <slot 6> `d`
+    <slot 7> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `a`, `c`, `d`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=17.0, numNodes=1
+EXPLAIN SELECT a,d,c,sum(e) FROM t1 GROUP BY a,d,c;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `a`
+    <slot 5> `d`
+    <slot 6> `c`
+    <slot 7> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `a`, `d`, `c`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `d` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=17.0, numNodes=1
+EXPLAIN SELECT c,a,d,sum(e) FROM t1 GROUP BY c,a,d;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `c`
+    <slot 5> `a`
+    <slot 6> `d`
+    <slot 7> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `c`, `a`, `d`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=17.0, numNodes=1
+EXPLAIN SELECT d,a,c,sum(e) FROM t1 GROUP BY d,a,c;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `d`
+    <slot 5> `a`
+    <slot 6> `c`
+    <slot 7> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `d`, `a`, `c`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `d` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=17.0, numNodes=1
+EXPLAIN SELECT c,d,b,sum(e) FROM t1 GROUP BY c,d,b;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `c`
+    <slot 5> `d`
+    <slot 6> `b`
+    <slot 7> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `c`, `d`, `b`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=17.0, numNodes=1
+EXPLAIN SELECT d,c,a,sum(e) FROM t1 GROUP BY d,c,a;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `d`
+    <slot 5> `c`
+    <slot 6> `a`
+    <slot 7> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `d`, `c`, `a`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `d` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=17.0, numNodes=1
+EXPLAIN SELECT b,a,sum(e) FROM t1 GROUP BY b,a;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 3> `b`
+    <slot 4> `a`
+    <slot 5> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `b`, `a`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. Aggregate Operator not match: SUM <--> REPLACE
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=13.0, numNodes=1
+EXPLAIN SELECT b,sum(e) FROM t1 GROUP BY b;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2> `b`
+    <slot 3> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `b`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. Aggregate Operator not match: SUM <--> REPLACE
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=9.0, numNodes=1
+EXPLAIN SELECT c,sum(e) FROM t1 GROUP BY c;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2> `c`
+    <slot 3> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `c`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=9.0, numNodes=1
+SELECT c,sum(e) FROM t1 GROUP BY c;
+c	sum(`e`)
+0	2
+2	2
+1	1
+EXPLAIN SELECT c,d,sum(e) FROM t1 GROUP BY c,d;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 3> `c`
+    <slot 4> `d`
+    <slot 5> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `c`, `d`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=13.0, numNodes=1
+SELECT c,d,sum(e) FROM t1 GROUP BY c,d;
+c	d	sum(`e`)
+0	0	2
+2	0	2
+1	0	1
+EXPLAIN SELECT c,d,a,sum(e) FROM t1 GROUP BY c,d,a;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `c`
+    <slot 5> `d`
+    <slot 6> `a`
+    <slot 7> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `c`, `d`, `a`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=17.0, numNodes=1
+SELECT c,d,a,sum(e) FROM t1 GROUP BY c,d,a;
+c	d	a	sum(`e`)
+0	0	0	1
+2	0	0	1
+1	0	1	1
+2	0	2	1
+0	0	4	1
+EXPLAIN SELECT c,d,a,b,sum(e) FROM t1 GROUP BY c,d,a,b;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 5> `c`
+    <slot 6> `d`
+    <slot 7> `a`
+    <slot 8> `b`
+    <slot 9> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `c`, `d`, `a`, `b`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=21.0, numNodes=1
+SELECT c,d,a,b,sum(e) FROM t1 GROUP BY c,d,a,b;
+c	d	a	b	sum(`e`)
+0	0	0	0	1
+2	0	0	1	1
+1	0	1	0	1
+2	0	2	0	1
+0	0	4	0	1
+EXPLAIN SELECT a,sum(e) FROM t1 GROUP BY a;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2> `a`
+    <slot 3> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `a`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. Aggregate Operator not match: SUM <--> REPLACE
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=9.0, numNodes=1
+SELECT a,sum(e) FROM t1 GROUP BY a;
+a	sum(`e`)
+0	2
+1	1
+2	1
+4	1
+EXPLAIN SELECT a,b,sum(e) FROM t1 GROUP BY a,b;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 3> `a`
+    <slot 4> `b`
+    <slot 5> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `a`, `b`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. Aggregate Operator not match: SUM <--> REPLACE
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=13.0, numNodes=1
+SELECT a,b,sum(e) FROM t1 GROUP BY a,b;
+a	b	sum(`e`)
+0	0	1
+0	1	1
+1	0	1
+2	0	1
+4	0	1
+EXPLAIN SELECT d,a,c,sum(e) FROM t1 GROUP BY d,a,c;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `d`
+    <slot 5> `a`
+    <slot 6> `c`
+    <slot 7> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `d`, `a`, `c`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `d` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=17.0, numNodes=1
+SELECT d,a,c,sum(e) FROM t1 GROUP BY d,a,c;
+d	a	c	sum(`e`)
+0	0	0	1
+0	0	2	1
+0	1	1	1
+0	2	2	1
+0	4	0	1
+EXPLAIN SELECT a,d,c,sum(e) FROM t1 GROUP BY a,d,c;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `a`
+    <slot 5> `d`
+    <slot 6> `c`
+    <slot 7> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `a`, `d`, `c`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `d` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=17.0, numNodes=1
+SELECT a,d,c,sum(e) FROM t1 GROUP BY a,d,c;
+a	d	c	sum(`e`)
+0	0	0	1
+0	0	2	1
+1	0	1	1
+2	0	2	1
+4	0	0	1
+EXPLAIN SELECT b,a,sum(e) FROM t1 GROUP BY b,a;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 3> `b`
+    <slot 4> `a`
+    <slot 5> sum(`e`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`e`)
+  |  group by: `b`, `a`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. Aggregate Operator not match: SUM <--> REPLACE
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=13.0, numNodes=1
+SELECT b,a,sum(e) FROM t1 GROUP BY b,a;
+b	a	sum(`e`)
+0	0	1
+1	0	1
+0	1	1
+0	2	1
+0	4	1
+EXPLAIN SELECT a,c,e,sum(d) FROM t1 GROUP BY a,c,e;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> `a`
+    <slot 5> `c`
+    <slot 6> `e`
+    <slot 7> sum(`d`)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  output: sum(`d`)
+  |  group by: `a`, `c`, `e`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28630
+     cardinality=0, avgRowSize=17.0, numNodes=1
+DROP TABLE t1;
+#
+# Bug #33968442: Hypergraph gives too high row estimates for GROUP BY
+#
+CREATE TABLE num10 (n INT)
+DISTRIBUTED BY HASH(n) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO num10 VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9);
+CREATE VIEW num1000 AS
+SELECT d1.n+d2.n*10+d3.n*100 n FROM num10 d1, num10 d2, num10 d3;
+CREATE TABLE t1(
+a INT,
+b INT,
+c INT,
+d INT,
+e INT,
+f INT,
+g INT,
+h INT,
+i INT,
+j INT,
+k INT,
+l INT
+)
+UNIQUE KEY(a,b)
+DISTRIBUTED BY HASH(a,b) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t1
+SELECT n/100,n%100,n%5,n%7,n%11,n%13,n%10,n%10,n%10,n%10,n%10,n%10
+FROM num1000;
+ANALYZE TABLE t1;
+EXPLAIN SELECT 1 FROM t1 GROUP BY a;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `a`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. this olap scan node[OlapScanNode{preds=((SlotRef{slotDesc=SlotDescriptor{id=2, parent=0, col=__DORIS_DELETE_SIGN__, type=TINYINT, materialized=true, byteSize=0, byteOffset=-1, nullIndicatorByte=0, nullIndicatorBit=0, slotIdx=0}, col=__DORIS_DELETE_SIGN__, label=`__DORIS_DELETE_SIGN__`, tblName=`default_cluster:test`.`t1`} )) limit=-1, olapTable=t1}] has already been turned off pre-aggregation.
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=5.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY c;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `c`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=5.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY d,c;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `d`, `c`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `d` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=9.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY d,a;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `d`, `a`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `d` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=9.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY c,d,a;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `c`, `d`, `a`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=13.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY d,a,c;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `d`, `a`, `c`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `d` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=13.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY c,d,a;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `c`, `d`, `a`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=13.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY c,a,d;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `c`, `a`, `d`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=13.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY c,a;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `c`, `a`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=9.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY c,b;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `c`, `b`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=9.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY e,f;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `e`, `f`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `e` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=9.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY g,h,i,j,k,l;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `g`, `h`, `i`, `j`, `k`, `l`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `g` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=25.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY e;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `e`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `e` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=5.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY e,f;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `e`, `f`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `e` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=9.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 WHERE b>95 GROUP BY e,f;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `e`, `f`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `e` which is StorageEngine value column
+     PREDICATES: `b` > 95 AND `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=13.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY c+0,e+0;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `c` + 0, `e` + 0
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=9.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 WHERE b>95 GROUP BY c+0,e+0;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `c` + 0, `e` + 0
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `c` which is StorageEngine value column
+     PREDICATES: `b` > 95 AND `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=13.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1 GROUP BY a,e,c+0;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  1:VAGGREGATE (update finalize)
+  |  group by: `a`, `e`, `c` + 0
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. conjunct on `e` which is StorageEngine value column
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=13.0, numNodes=1
+CREATE TABLE t2 (
+c1 INT,
+c2 INT,
+c3 INT
+)
+UNIQUE KEY(c1,c2)
+DISTRIBUTED BY HASH(c1,c2) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t2 SELECT n%5,n/5,n%3 FROM num10;
+EXPLAIN SELECT 1 FROM t1,t2 GROUP BY c1;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  3:VAGGREGATE (update finalize)
+  |  group by: <slot 7>
+  |  cardinality=-1
+  |  
+  2:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 3
+  |  vIntermediate tuple ids: 4 5 
+  |  output slot ids: 7 
+  |  
+  |----4:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. this olap scan node[OlapScanNode{preds=((SlotRef{slotDesc=SlotDescriptor{id=3, parent=0, col=__DORIS_DELETE_SIGN__, type=TINYINT, materialized=true, byteSize=0, byteOffset=-1, nullIndicatorByte=0, nullIndicatorBit=0, slotIdx=0}, col=__DORIS_DELETE_SIGN__, label=`__DORIS_DELETE_SIGN__`, tblName=`default_cluster:test`.`t1`} )) limit=-1, olapTable=t1}] has already been turned off pre-aggregation.
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=5.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`c1`, `default_cluster:test`.`t2`.`c2`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 04
+    UNPARTITIONED
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `default_cluster:test`.`t2`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28731
+     cardinality=0, avgRowSize=5.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1,t2 GROUP BY c2;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  3:VAGGREGATE (update finalize)
+  |  group by: <slot 7>
+  |  cardinality=-1
+  |  
+  2:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 3
+  |  vIntermediate tuple ids: 4 5 
+  |  output slot ids: 7 
+  |  
+  |----4:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. this olap scan node[OlapScanNode{preds=((SlotRef{slotDesc=SlotDescriptor{id=3, parent=0, col=__DORIS_DELETE_SIGN__, type=TINYINT, materialized=true, byteSize=0, byteOffset=-1, nullIndicatorByte=0, nullIndicatorBit=0, slotIdx=0}, col=__DORIS_DELETE_SIGN__, label=`__DORIS_DELETE_SIGN__`, tblName=`default_cluster:test`.`t1`} )) limit=-1, olapTable=t1}] has already been turned off pre-aggregation.
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=5.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`c1`, `default_cluster:test`.`t2`.`c2`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 04
+    UNPARTITIONED
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `default_cluster:test`.`t2`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28731
+     cardinality=0, avgRowSize=5.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1,t2 GROUP BY c3;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  3:VAGGREGATE (update finalize)
+  |  group by: <slot 7>
+  |  cardinality=-1
+  |  
+  2:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 3
+  |  vIntermediate tuple ids: 4 5 
+  |  output slot ids: 7 
+  |  
+  |----4:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. this olap scan node[OlapScanNode{preds=((SlotRef{slotDesc=SlotDescriptor{id=3, parent=0, col=__DORIS_DELETE_SIGN__, type=TINYINT, materialized=true, byteSize=0, byteOffset=-1, nullIndicatorByte=0, nullIndicatorBit=0, slotIdx=0}, col=__DORIS_DELETE_SIGN__, label=`__DORIS_DELETE_SIGN__`, tblName=`default_cluster:test`.`t1`} )) limit=-1, olapTable=t1}] has already been turned off pre-aggregation.
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=5.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`c1`, `default_cluster:test`.`t2`.`c2`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 04
+    UNPARTITIONED
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `default_cluster:test`.`t2`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28731
+     cardinality=0, avgRowSize=5.0, numNodes=1
+EXPLAIN SELECT 1 FROM t1,t2 GROUP BY a,c3;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    1
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`, `default_cluster:test`.`t1`.`b`
+
+  VRESULT SINK
+
+  3:VAGGREGATE (update finalize)
+  |  group by: <slot 6>, <slot 8>
+  |  cardinality=-1
+  |  
+  2:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 3
+  |  vIntermediate tuple ids: 4 5 
+  |  output slot ids: 6 8 
+  |  
+  |----4:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. this olap scan node[OlapScanNode{preds=((SlotRef{slotDesc=SlotDescriptor{id=4, parent=0, col=__DORIS_DELETE_SIGN__, type=TINYINT, materialized=true, byteSize=0, byteOffset=-1, nullIndicatorByte=0, nullIndicatorBit=0, slotIdx=0}, col=__DORIS_DELETE_SIGN__, label=`__DORIS_DELETE_SIGN__`, tblName=`default_cluster:test`.`t1`} )) limit=-1, olapTable=t1}] has already been turned off pre-aggregation.
+     PREDICATES: `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28677
+     cardinality=0, avgRowSize=5.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`c1`, `default_cluster:test`.`t2`.`c2`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 04
+    UNPARTITIONED
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `default_cluster:test`.`t2`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=28731
+     cardinality=0, avgRowSize=5.0, numNodes=1
+DROP VIEW num1000;
+DROP TABLE num10;
+DROP TABLE t1;
+DROP TABLE t2;

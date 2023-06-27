@@ -1,0 +1,269 @@
+#
+# Bug#18446462: ASSERT `ROWS >= 0.0' AT
+#               COST_MODEL_SERVER::ROW_EVALUATE_COST IN 
+#               OPT_COSTMODEL.H
+#
+create table t10 (pk int, i int)
+UNIQUE KEY(`pk`)
+DISTRIBUTED BY HASH(pk) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+     );
+insert into t10 values (1,1);
+insert into t10 select pk+1, i from t10;
+insert into t10 select pk+2, i from t10;
+insert into t10 select pk+4, i from t10;
+insert into t10 select pk+8, i from t10 limit 2;
+create table t19 (pk int, i int)
+UNIQUE KEY(`pk`)
+DISTRIBUTED BY HASH(pk) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+     );
+insert into t19 values (1,1);
+insert into t19 select pk+1, i from t19;
+insert into t19 select pk+2, i from t19;
+insert into t19 select pk+4, i from t19;
+insert into t19 select pk+8, i from t19;
+insert into t19 select pk+16, i from t19 limit 3;
+create table t25 (pk int, i int)
+UNIQUE KEY(`pk`)
+DISTRIBUTED BY HASH(pk) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+     );
+insert into t25 values (1,1);
+insert into t25 select pk+1, i from t25;
+insert into t25 select pk+2, i from t25;
+insert into t25 select pk+4, i from t25;
+insert into t25 select pk+8, i from t25;
+insert into t25 select pk+16, i from t25 limit 9;
+EXPLAIN SELECT * FROM (
+SELECT t10_1.*
+FROM t10 AS t10_1,
+t10 AS t10_2,
+t10 AS t10_3,
+t10 AS t10_4,
+t10 AS t10_5,
+t10 AS t10_6,
+t25 AS t25_1, 
+t25 AS t25_2,
+t19
+) AS d;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 62>
+    <slot 63>
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t10`.`pk`
+
+  VRESULT SINK
+
+  16:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 17
+  |  vIntermediate tuple ids: 32 33 
+  |  output slot ids: 62 63 
+  |  
+  |----24:VEXCHANGE
+  |       offset: 0
+  |    
+  14:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 16
+  |  vIntermediate tuple ids: 30 31 
+  |  output slot ids: 51 52 
+  |  
+  |----23:VEXCHANGE
+  |       offset: 0
+  |    
+  12:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 15
+  |  vIntermediate tuple ids: 28 29 
+  |  output slot ids: 41 42 
+  |  
+  |----22:VEXCHANGE
+  |       offset: 0
+  |    
+  10:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 14
+  |  vIntermediate tuple ids: 26 27 
+  |  output slot ids: 32 33 
+  |  
+  |----21:VEXCHANGE
+  |       offset: 0
+  |    
+  8:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 13
+  |  vIntermediate tuple ids: 24 25 
+  |  output slot ids: 24 25 
+  |  
+  |----20:VEXCHANGE
+  |       offset: 0
+  |    
+  6:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 12
+  |  vIntermediate tuple ids: 22 23 
+  |  output slot ids: 17 18 
+  |  
+  |----19:VEXCHANGE
+  |       offset: 0
+  |    
+  4:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 11
+  |  vIntermediate tuple ids: 20 21 
+  |  output slot ids: 11 12 
+  |  
+  |----18:VEXCHANGE
+  |       offset: 0
+  |    
+  2:VNESTED LOOP JOIN
+  |  join op: INNER JOIN()
+  |  is output left side only: false
+  |  cardinality=0
+  |  vec output tuple id: 10
+  |  vIntermediate tuple ids: 18 19 
+  |  output slot ids: 6 7 
+  |  
+  |----17:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t10(t10), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. No AggregateInfo
+     PREDICATES: `t10_1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20015
+     cardinality=0, avgRowSize=9.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t19`.`pk`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 24
+    UNPARTITIONED
+
+  15:VOlapScanNode
+     TABLE: default_cluster:test.t19(t19), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `default_cluster:test`.`t19`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20025
+     cardinality=0, avgRowSize=1.0, numNodes=1
+
+PLAN FRAGMENT 2
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t25`.`pk`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 23
+    UNPARTITIONED
+
+  13:VOlapScanNode
+     TABLE: default_cluster:test.t25(t25), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `t25_2`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20036
+     cardinality=0, avgRowSize=1.0, numNodes=1
+
+PLAN FRAGMENT 3
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t25`.`pk`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 22
+    UNPARTITIONED
+
+  11:VOlapScanNode
+     TABLE: default_cluster:test.t25(t25), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `t25_1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20036
+     cardinality=0, avgRowSize=1.0, numNodes=1
+
+PLAN FRAGMENT 4
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t10`.`pk`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 21
+    UNPARTITIONED
+
+  9:VOlapScanNode
+     TABLE: default_cluster:test.t10(t10), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `t10_6`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20015
+     cardinality=0, avgRowSize=1.0, numNodes=1
+
+PLAN FRAGMENT 5
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t10`.`pk`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 20
+    UNPARTITIONED
+
+  7:VOlapScanNode
+     TABLE: default_cluster:test.t10(t10), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `t10_5`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20015
+     cardinality=0, avgRowSize=1.0, numNodes=1
+
+PLAN FRAGMENT 6
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t10`.`pk`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 19
+    UNPARTITIONED
+
+  5:VOlapScanNode
+     TABLE: default_cluster:test.t10(t10), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `t10_4`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20015
+     cardinality=0, avgRowSize=1.0, numNodes=1
+
+PLAN FRAGMENT 7
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t10`.`pk`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 18
+    UNPARTITIONED
+
+  3:VOlapScanNode
+     TABLE: default_cluster:test.t10(t10), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `t10_3`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20015
+     cardinality=0, avgRowSize=1.0, numNodes=1
+
+PLAN FRAGMENT 8
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t10`.`pk`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 17
+    UNPARTITIONED
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t10(t10), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts.
+     PREDICATES: `t10_2`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20015
+     cardinality=0, avgRowSize=1.0, numNodes=1
+DROP TABLE t10;
+DROP TABLE t19;
+DROP TABLE t25;

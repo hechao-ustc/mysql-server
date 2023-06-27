@@ -1,0 +1,17 @@
+CREATE TABLE t1 (
+id int(10) NOT NULL,
+k int(10) NOT NULL default '0',
+c char(120) NOT NULL default '',
+pad char(60) NOT NULL default ''
+) UNIQUE KEY(`id`)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+     );
+ANALYZE TABLE t1;
+SHOW SESSION STATUS LIKE 'Sort%';
+Variable_name	Value
+SELECT c FROM t1 WHERE id between 2 and 1002 ORDER BY c;
+SHOW SESSION STATUS LIKE 'Sort%';
+Variable_name	Value
+DROP TABLE t1;

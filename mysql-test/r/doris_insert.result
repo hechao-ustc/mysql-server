@@ -1,0 +1,25 @@
+drop table if EXISTS t1;
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+create table t1 (id int not null, username varchar(32) not null)
+UNIQUE KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t1 values (0,"mysql");
+insert into t1 values (0,"mysql ab");
+insert into t1 values (0,"mysql a");
+insert into t1 values (0,"r1manic");
+insert into t1 values (0,"r1man");
+drop table t1;
+create table t1 (id int NOT NULL DEFAULT '8')
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t1 values (1), (2);
+select * from t1;
+id
+1
+2
+drop table t1;

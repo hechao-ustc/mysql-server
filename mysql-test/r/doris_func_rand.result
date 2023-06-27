@@ -1,0 +1,194 @@
+#
+# Bug#33535379 Wrong value for RAND() expression when aggregating on empty table.
+#
+CREATE TABLE t ( i1 INT, i2 INT)
+DISTRIBUTED BY HASH(i1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+   );
+ANALYZE TABLE t;
+EXPLAIN INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000) FROM t;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> max(`i1`)
+    floor(rand(0) * 1000)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t`.`i1`
+
+  OLAP TABLE SINK
+    TUPLE ID: 0
+    RANDOM
+
+  1:VAGGREGATE (update finalize)
+  |  output: max(`i1`)
+  |  group by: 
+  |  cardinality=1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t(t), PREAGGREGATION: ON
+     partitions=0/1, tablets=0/0, tabletList=
+     cardinality=0, avgRowSize=4.0, numNodes=1
+     pushAggOp=MINMAX
+INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000) FROM t;
+SELECT * FROM t;
+i1	i2
+NULL	597
+INSERT INTO t VALUES (1,1),(2,2),(3,3);
+ANALYZE TABLE t;
+EXPLAIN INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000) FROM t;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> max(`i1`)
+    floor(rand(0) * 1000)
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t`.`i1`
+
+  OLAP TABLE SINK
+    TUPLE ID: 0
+    RANDOM
+
+  1:VAGGREGATE (update finalize)
+  |  output: max(`i1`)
+  |  group by: 
+  |  cardinality=1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t(t), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=22812
+     cardinality=0, avgRowSize=4.0, numNodes=1
+     pushAggOp=MINMAX
+INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000) FROM t;
+SELECT * FROM t;
+i1	i2
+NULL	597
+1	1
+2	2
+3	3
+3	597
+TRUNCATE TABLE t;
+ANALYZE TABLE t;
+EXPLAIN INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000)
++ EXTRACT(YEAR FROM NOW()) DIV 1000 FROM t;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> max(`i1`)
+    floor(rand(0) * 1000) + 2023 DIV 1000
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t`.`i1`
+
+  OLAP TABLE SINK
+    TUPLE ID: 0
+    RANDOM
+
+  1:VAGGREGATE (update finalize)
+  |  output: max(`i1`)
+  |  group by: 
+  |  cardinality=1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t(t), PREAGGREGATION: ON
+     partitions=0/1, tablets=0/0, tabletList=
+     cardinality=0, avgRowSize=4.0, numNodes=1
+     pushAggOp=MINMAX
+INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000)
++ EXTRACT(YEAR FROM NOW()) DIV 1000 FROM t;
+SELECT * FROM t;
+i1	i2
+NULL	544
+INSERT INTO t VALUES (1,1),(2,2),(3,3);
+ANALYZE TABLE t;
+EXPLAIN INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000)
++ EXTRACT(YEAR FROM NOW()) DIV 1000 FROM t;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 4> max(`i1`)
+    floor(rand(0) * 1000) + 2023 DIV 1000
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t`.`i1`
+
+  OLAP TABLE SINK
+    TUPLE ID: 0
+    RANDOM
+
+  1:VAGGREGATE (update finalize)
+  |  output: max(`i1`)
+  |  group by: 
+  |  cardinality=1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t(t), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=22840
+     cardinality=0, avgRowSize=4.0, numNodes=1
+     pushAggOp=MINMAX
+INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000)
++ EXTRACT(YEAR FROM NOW()) DIV 1000 FROM t;
+SELECT * FROM t;
+i1	i2
+NULL	544
+1	1
+2	2
+3	3
+3	544
+ANALYZE TABLE t;
+EXPLAIN INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000)
++ EXTRACT(YEAR FROM NOW()) DIV 1000 FROM t GROUP BY i2;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 5> max(`i1`)
+    floor(rand(0) * 1000) + 2023 DIV 1000
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t`.`i1`
+
+  OLAP TABLE SINK
+    TUPLE ID: 0
+    RANDOM
+
+  1:VAGGREGATE (update finalize)
+  |  output: max(`i1`)
+  |  group by: `i2`
+  |  cardinality=-1
+  |  
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t(t), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=22840
+     cardinality=0, avgRowSize=8.0, numNodes=1
+INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000)
++ EXTRACT(YEAR FROM NOW()) DIV 1000 FROM t GROUP BY i2;
+SELECT i1 FROM t;
+i1
+1
+1
+2
+2
+3
+3
+3
+3
+NULL
+SELECT i2 FROM t;
+i2
+1
+2
+3
+425
+544
+544
+544
+59
+633
+DROP TABLE t;
+#
+# Bug#33834514: 'RAND(0)' gives inconsistent results with hypergraph
+#
+CREATE TABLE t (i INT)
+DISTRIBUTED BY HASH(i) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+   );
+INSERT INTO t VALUES (1), (2), (3);
+SELECT r FROM t LEFT JOIN (SELECT RAND(0) AS r) AS dt ON TRUE;
+r
+0.99214520962982877
+0.039569025844865664
+0.59749466269467177
+DROP TABLE t;

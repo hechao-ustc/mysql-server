@@ -1,0 +1,209 @@
+# Description
+# -----------
+# Testing string functions
+
+--disable_warnings
+drop table if exists t1;
+drop table if exists t2;
+--enable_warnings
+
+select 'hello',"'hello'",'""hello""','''h''e''l''l''o''',"hel""lo",'hel\'lo';
+select 'hello' 'monty';
+select length('\n\t\r\b\0\_\%\\');
+select bit_length('\n\t\r\b\0\_\%\\');
+select char_length('\n\t\r\b\0\_\%\\');
+select hex(char(256));
+select locate('he','hello'),locate('he','hello',2),locate('lo','hello',2) ;
+
+#
+# Bug#11728 string function LEFT,
+# strange undocumented behaviour, strict mode
+#
+select left('hello',null), right('hello',null);
+select concat('',left(right(concat('what ',concat('is ','happening')),9),4),'',substring('monty',5,1)) ;
+select substring_index('www.tcx.se','.',-2),substring_index('www.tcx.se','.',1);
+select substring_index('www.tcx.se','tcx',1),substring_index('www.tcx.se','tcx',-1);
+select substring_index('.tcx.se','.',-2),substring_index('.tcx.se','.tcx',-1);
+select substring_index('aaaaaaaaa1','a',1);
+select substring_index('aaaaaaaaa1','aa',1);
+select substring_index('aaaaaaaaa1','aa',2);
+select substring_index('aaaaaaaaa1','aa',3);
+select substring_index('aaaaaaaaa1','aa',4);
+select substring_index('aaaaaaaaa1','aa',5);
+select substring_index('aaaaaaaaa1','aaa',1);
+select substring_index('aaaaaaaaa1','aaa',2);
+select substring_index('aaaaaaaaa1','aaa',3);
+select substring_index('aaaaaaaaa1','aaa',4);
+select substring_index('aaaaaaaaa1','aaaa',1);
+select substring_index('aaaaaaaaa1','aaaa',2);
+select substring_index('aaaaaaaaa1','1',1);
+select substring_index('aaaaaaaaa1','a',-1);
+select substring_index('aaaaaaaaa1','aa',-1);
+select substring_index('aaaaaaaaa1','aa',-2);
+select substring_index('aaaaaaaaa1','aa',-3);
+select substring_index('aaaaaaaaa1','aa',-4);
+select substring_index('aaaaaaaaa1','aa',-5);
+select substring_index('aaaaaaaaa1','aaa',-1);
+select substring_index('aaaaaaaaa1','aaa',-2);
+select substring_index('aaaaaaaaa1','aaa',-3);
+select substring_index('aaaaaaaaa1','aaa',-4);
+select substring_index('the king of thethe hill','the',-2);
+select substring_index('the king of the the hill','the',-2);
+select substring_index('the king of the  the hill','the',-2);
+select substring_index('the king of the  the hill',' the ',-1);
+select substring_index('the king of the  the hill',' the ',-2);
+select substring_index('the king of the  the hill',' ',-1);
+select substring_index('the king of the  the hill',' ',-2);
+select substring_index('the king of the  the hill',' ',-3);
+select substring_index('the king of the  the hill',' ',-4);
+select substring_index('the king of the  the hill',' ',-5);
+select substring_index('the king of the.the hill','the',-2);
+select substring_index('the king of thethethe.the hill','the',-3);
+select substring_index('the king of thethethe.the hill','the',-1);
+select substring_index('the king of the the hill','the',1);
+select substring_index('the king of the the hill','the',2);
+select substring_index('the king of the the hill','the',3);
+
+select concat(':',ltrim('  left  '),':',rtrim('  right  '),':');
+
+select concat_ws(', ','monty','was here','again');
+select concat_ws(NULL,'a'),concat_ws(',',NULL,'');
+select concat_ws(',','',NULL,'a');
+SELECT CONCAT('"',CONCAT_WS('";"',repeat('a',60),repeat('b',60),repeat('c',60),repeat('d',100)), '"');
+
+select replace('aaaa','a','b'),replace('aaaa','aa','b'),replace('aaaa','a','bb'),replace('aaaa','','b'),replace('bbbb','a','c');
+select replace(concat(lcase(concat('THIS',' ','IS',' ','A',' ')),ucase('false'),' ','test'),'FALSE','REAL') ;
+select md5('hello');
+select aes_decrypt(aes_encrypt('abc','1'),'1');
+select aes_decrypt(aes_encrypt('abc','1'),1);
+select aes_encrypt(NULL,"a");
+select aes_encrypt("a",NULL);
+select aes_decrypt(NULL,"a");
+select aes_decrypt("a",NULL);
+select aes_decrypt("a","a");
+select aes_decrypt(aes_encrypt("","a"),"a");
+select repeat('monty',5),concat('*',space(5),'*');
+select reverse('abc'),reverse('abcd');
+select rpad('a',4,'1'),rpad('a',4,'12'),rpad('abcd',3,'12'), rpad(11, 10 , 22), rpad("ab", 10, 22);
+select lpad('a',4,'1'),lpad('a',4,'12'),lpad('abcd',3,'12'), lpad(11, 10 , 22);
+select rpad(741653838,17,'0'),lpad(741653838,17,'0');
+select rpad('abcd',7,'ab'),lpad('abcd',7,'ab');
+select rpad('abcd',1,'ab'),lpad('abcd',1,'ab');
+select rpad('STRING', 20, CONCAT('p','a','d') );
+select lpad('STRING', 20, CONCAT('p','a','d') );
+
+select LEAST(NULL,'HARRY','HARRIOT',NULL,'HAROLD'),GREATEST(NULL,'HARRY','HARRIOT',NULL,'HAROLD');
+select least(1,2,3) | greatest(16,32,8), least(5,4)*1,greatest(-1.0,1.0)*1,least(3,2,1)*1.0,greatest(1,1.1,1.0),least("10",9),greatest("A","B","0");
+
+select unhex(hex("foobar")), hex(unhex("1234567890ABCDEF")), unhex("345678"), unhex(NULL);
+select hex(unhex("1")), hex(unhex("12")), hex(unhex("123")), hex(unhex("1234")), hex(unhex("12345")), hex(unhex("123456"));
+select length(unhex(md5("abrakadabra")));
+
+
+#
+# Wrong usage of functions
+#
+
+select reverse("");
+select elt(2,1),field(NULL,"a","b","c"),reverse("");
+select locate("a","b",2),locate("","a",1);
+select concat("1","2")|0,concat("1",".5")+0.0;
+select substring_index("www.tcx.se","",3);
+select length(repeat("a",100000000)),length(repeat("a",1000*64));
+
+
+
+#
+# test for SUBSTR
+#
+select SUBSTR('abcdefg',3,2);
+select SUBSTRING('abcdefg',3,2);
+
+
+select substring_index("1abcd;2abcd;3abcd;4abcd", ';', 2),substring_index("1abcd;2abcd;3abcd;4abcd", ';', -2);
+
+explain select md5('hello');
+explain select aes_decrypt(aes_encrypt('abc','1'),'1');
+explain select concat('*',space(5),'*');
+explain select reverse('abc');
+explain select rpad('a',4,'1');
+explain select lpad('a',4,'1');
+explain select concat_ws(',','',NULL,'a');
+explain select elt(2,1);
+explain select locate("a","b",2);
+explain select char(0);
+explain select conv(130,16,10);
+explain select hex(130);
+explain select length('\n\t\r\b\0\_\%\\');
+explain select bit_length('\n\t\r\b\0\_\%\\');
+explain select bit_length('\n\t\r\b\0\_\%\\');
+explain select concat('monty',' was here ','again');
+explain select length('hello');
+explain select char(ascii('h'));
+explain select replace('aaaa','a','b');
+explain select SUBSTR('abcdefg',3,2);
+explain select substring_index("1abcd;2abcd;3abcd;4abcd", ';', 2);
+
+#
+# lpad returns incorrect result (Bug #2182)
+#
+
+SELECT lpad(12345, 5, "#");
+
+#
+# Problem the the CONV() function (Bug #2972)
+#
+
+SELECT conv(71, 10, 36), conv('1Z', 36, 10);
+SELECT conv(71, 10, 37), conv('1Z', 37, 10), conv(0,1,10),conv(0,0,10), conv(0,-1,10);
+
+#
+# Bug in SUBSTRING when mixed with CONCAT and ORDER BY (Bug #3089)
+#
+
+create table t1 (id int(1), str varchar(10))
+DISTRIBUTED BY HASH(id) BUCKETS 1
+     PROPERTIES (
+     "replication_num" = "1"
+     );
+insert into t1 values (1,'aaaaaaaaaa'), (2,'bbbbbbbbbb');
+create table t2 (id int(1), str varchar(10))
+DISTRIBUTED BY HASH(id) BUCKETS 1
+     PROPERTIES (
+     "replication_num" = "1"
+     );
+insert into t2 values (1,'cccccccccc'), (2,'dddddddddd');
+select substring(concat(t1.str, t2.str), 1, 15) "name" from t1, t2
+where t2.id=t1.id order by name;
+drop table t1;
+drop table t2;
+
+#
+# Bug #4878: LEFT() in integer/float context
+#
+
+select left(1234, 3) + 0;
+
+#
+# Bug #7101: bug with LEFT() when used as a field in GROUP BY aggregation
+#
+create table t1 (a int not null, b varchar(40), c datetime)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+     PROPERTIES (
+     "replication_num" = "1"
+     );
+insert into t1 (a,b,c) values (1,'Tom','2004-12-10 12:13:14'),(2,'ball games','2004-12-10 12:13:14'), (3,'Basil','2004-12-10 12:13:14'), (4,'Dean','2004-12-10 12:13:14'),(5,'Ellis','2004-12-10 12:13:14'), (6,'Serg','2004-12-10 12:13:14'), (7,'Sergei','2004-12-10 12:13:14'),(8,'Georg','2004-12-10 12:13:14'),(9,'Salle','2004-12-10 12:13:14'),(10,'Sinisa','2004-12-10 12:13:14');
+select count(*) as total, left(c,10) as reg from t1 group by reg order by reg desc limit 0,12;
+drop table t1;
+
+#
+# Bug #6317: string function CHAR, parameter is NULL, wrong result
+#
+SELECT CHAR(NULL,121,83,81,'76') as my_column;
+SELECT CHAR_LENGTH(CHAR(NULL,121,83,81,'76')) as my_column;
+
+#
+# Bug #10944: Mishandling of NULL arguments in FIELD()
+#
+select field(0,NULL,1,0), field("",NULL,"bar",""), field(0.0,NULL,1.0,0.0);
+select field(NULL,1,2,NULL), field(NULL,1,2,0);

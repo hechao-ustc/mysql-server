@@ -1,0 +1,30 @@
+SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
+select database();
+DATABASE()
+test
+select database() = "test";
+DATABASE() = 'test'
+1
+select user() like "%@%";
+USER() LIKE '%@%'
+1
+select version()>="3.23.29";
+version() >= '3.23.29'
+1
+explain select database(), user();
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 0> DATABASE()
+     USER()
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  0:VUNION
+     constant exprs: 
+         DATABASE() | USER()
+select TRUE,FALSE,NULL;
+TRUE	FALSE	NULL
+1	0	NULL
+SET sql_mode = default;

@@ -1,0 +1,612 @@
+#
+# Start out by testing some simple in-memory inner hash joins.
+#
+# Join on two integer columns.
+CREATE TABLE t1 (col1 INTEGER)
+DISTRIBUTED BY HASH(col1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+CREATE TABLE t2 (col1 INTEGER)
+DISTRIBUTED BY HASH(col1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t1 VALUES (1), (3), (5), (7);
+INSERT INTO t2 VALUES (1), (2), (5), (6);
+ANALYZE TABLE t1;
+ANALYZE TABLE t2;
+EXPLAIN
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1 ORDER BY t1.col1;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2> `t1`.`col1`
+    <slot 3> `t2`.`col1`
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  5:VMERGING-EXCHANGE
+     offset: 0
+     limit: 9223372036854775807
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 05
+    UNPARTITIONED
+
+  3:VTOP-N
+  |  order by: <slot 2> `t1`.`col1` ASC
+  |  offset: 0
+  |  limit: 9223372036854775807
+  |  
+  2:VHASH JOIN
+  |  join op: INNER JOIN(BUCKET_SHUFFLE)[Tables are not in the same group]
+  |  equal join conjunct: `t1`.`col1` = `t2`.`col1`
+  |  runtime filters: RF000[in_or_bloom] <- `t2`.`col1`
+  |  cardinality=0
+  |  vec output tuple id: 3
+  |  vIntermediate tuple ids: 4 5 
+  |  output slot ids: 4 5 
+  |  hash output slot ids: 0 1 
+  |  
+  |----4:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     runtime filters: RF000[in_or_bloom] -> `t1`.`col1`
+     partitions=1/1, tablets=1/1, tabletList=29182
+     cardinality=0, avgRowSize=4.0, numNodes=1
+
+PLAN FRAGMENT 2
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`col1`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 04
+    BUCKET_SHFFULE_HASH_PARTITIONED: `t2`.`col1`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29187
+     cardinality=0, avgRowSize=4.0, numNodes=1
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1 ORDER BY t1.col1;
+col1	col1
+1	1
+5	5
+DROP TABLE t1;
+DROP TABLE t2;
+# Join on a integer column and a string column.
+CREATE TABLE t1 (col1 INTEGER)
+DISTRIBUTED BY HASH(col1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+CREATE TABLE t2 (col1 VARCHAR(255))
+DISTRIBUTED BY HASH(col1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t1 VALUES (1), (3), (5), (7);
+INSERT INTO t2 VALUES (1), (2), (5), (6);
+ANALYZE TABLE t1;
+ANALYZE TABLE t2;
+EXPLAIN
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1 ORDER BY t1.col1;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2> `t1`.`col1`
+    <slot 3> `t2`.`col1`
+  PARTITION: UNPARTITIONED
+
+  VRESULT SINK
+
+  5:VMERGING-EXCHANGE
+     offset: 0
+     limit: 9223372036854775807
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 05
+    UNPARTITIONED
+
+  3:VTOP-N
+  |  order by: <slot 2> `t1`.`col1` ASC
+  |  offset: 0
+  |  limit: 9223372036854775807
+  |  
+  2:VHASH JOIN
+  |  join op: INNER JOIN(BROADCAST)[Tables are not in the same group]
+  |  equal join conjunct: `t1`.`col1` = `t2`.`col1`
+  |  runtime filters: RF000[in_or_bloom] <- `t2`.`col1`
+  |  cardinality=0
+  |  vec output tuple id: 3
+  |  vIntermediate tuple ids: 4 5 
+  |  output slot ids: 4 5 
+  |  hash output slot ids: 0 1 
+  |  
+  |----4:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     runtime filters: RF000[in_or_bloom] -> `t1`.`col1`
+     partitions=1/1, tablets=1/1, tabletList=29211
+     cardinality=0, avgRowSize=4.0, numNodes=1
+
+PLAN FRAGMENT 2
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`col1`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 04
+    UNPARTITIONED
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29216
+     cardinality=0, avgRowSize=16.0, numNodes=1
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1 ORDER BY t1.col1;
+col1	col1
+1	1
+5	5
+DROP TABLE t1;
+DROP TABLE t2;
+# Join on two datetime columns.
+CREATE TABLE t1 (col1 DATETIME(6))
+DISTRIBUTED BY HASH(col1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+CREATE TABLE t2 (col1 DATETIME(6))
+DISTRIBUTED BY HASH(col1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t1 VALUES ('2018-01-01 00:00:00.000000'),
+('2018-01-01 00:00:00.000001'),
+('2018-01-02 00:00:00.000000'),
+('2018-01-02 00:00:00.000001'),
+(NULL), (NULL);
+INSERT INTO t2 VALUES ('2018-01-01 00:00:00.000000'),
+('2018-01-01 00:00:00.000002'),
+('2018-01-02 00:00:00.000001'),
+('2019-01-02 00:00:00.000001'),
+(NULL), (NULL), (NULL);
+ANALYZE TABLE t1;
+ANALYZE TABLE t2;
+EXPLAIN
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2>
+    <slot 3>
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1`
+
+  VRESULT SINK
+
+  2:VHASH JOIN
+  |  join op: INNER JOIN(BUCKET_SHUFFLE)[Tables are not in the same group]
+  |  equal join conjunct: `t1`.`col1` = `t2`.`col1`
+  |  runtime filters: RF000[in_or_bloom] <- `t2`.`col1`
+  |  cardinality=0
+  |  vec output tuple id: 2
+  |  vIntermediate tuple ids: 3 4 
+  |  output slot ids: 2 3 
+  |  hash output slot ids: 0 1 
+  |  
+  |----3:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     runtime filters: RF000[in_or_bloom] -> `t1`.`col1`
+     partitions=1/1, tablets=1/1, tabletList=29241
+     cardinality=0, avgRowSize=8.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`col1`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 03
+    BUCKET_SHFFULE_HASH_PARTITIONED: `t2`.`col1`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29247
+     cardinality=0, avgRowSize=8.0, numNodes=1
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1 ORDER BY t1.col1;
+col1	col1
+2018-01-01 00:00:00.000000	2018-01-01 00:00:00.000000
+2018-01-02 00:00:00.000001	2018-01-02 00:00:00.000001
+EXPLAIN
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 <=> t2.col1;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2>
+    <slot 3>
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1`
+
+  VRESULT SINK
+
+  2:VHASH JOIN
+  |  join op: INNER JOIN(BUCKET_SHUFFLE)[Tables are not in the same group]
+  |  equal join conjunct: `t1`.`col1` <=> `t2`.`col1`
+  |  cardinality=0
+  |  vec output tuple id: 2
+  |  vIntermediate tuple ids: 3 4 
+  |  output slot ids: 2 3 
+  |  hash output slot ids: 0 1 
+  |  
+  |----3:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29241
+     cardinality=0, avgRowSize=8.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`col1`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 03
+    BUCKET_SHFFULE_HASH_PARTITIONED: `t2`.`col1`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29247
+     cardinality=0, avgRowSize=8.0, numNodes=1
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 <=> t2.col1 ORDER BY t1.col1;
+col1	col1
+2018-01-01 00:00:00.000000	2018-01-01 00:00:00.000000
+2018-01-02 00:00:00.000001	2018-01-02 00:00:00.000001
+NULL	NULL
+NULL	NULL
+NULL	NULL
+NULL	NULL
+NULL	NULL
+NULL	NULL
+DROP TABLE t1;
+DROP TABLE t2;
+# Join on a string and datetime column, where datetime comparison is
+# picked.
+CREATE TABLE t1 (a DATETIME)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t1 VALUES ('2001-01-01 00:00:00'), (NULL);
+CREATE TABLE t2 (b VARCHAR(64))
+DISTRIBUTED BY HASH(b) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t2 VALUES ('2001#01#01'), (NULL), (NULL);
+ANALYZE TABLE t1;
+ANALYZE TABLE t2;
+EXPLAIN SELECT * FROM t1, t2 WHERE a=b;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2>
+    <slot 3>
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  2:VHASH JOIN
+  |  join op: INNER JOIN(BUCKET_SHUFFLE)[Tables are not in the same group]
+  |  equal join conjunct: `a` = `b`
+  |  runtime filters: RF000[in_or_bloom] <- `b`
+  |  cardinality=0
+  |  vec output tuple id: 2
+  |  vIntermediate tuple ids: 3 4 
+  |  output slot ids: 2 3 
+  |  hash output slot ids: 0 1 
+  |  
+  |----3:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     runtime filters: RF000[in_or_bloom] -> `a`
+     partitions=1/1, tablets=1/1, tabletList=29272
+     cardinality=0, avgRowSize=16.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`b`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 03
+    BUCKET_SHFFULE_HASH_PARTITIONED: `b`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29278
+     cardinality=0, avgRowSize=16.0, numNodes=1
+SELECT * FROM t1, t2 WHERE a=b;
+a	b
+2001-01-01 00:00:00	2001#01#01
+EXPLAIN SELECT * FROM t1, t2 WHERE a<=>b;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2>
+    <slot 3>
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`a`
+
+  VRESULT SINK
+
+  2:VHASH JOIN
+  |  join op: INNER JOIN(BUCKET_SHUFFLE)[Tables are not in the same group]
+  |  equal join conjunct: `a` <=> `b`
+  |  cardinality=0
+  |  vec output tuple id: 2
+  |  vIntermediate tuple ids: 3 4 
+  |  output slot ids: 2 3 
+  |  hash output slot ids: 0 1 
+  |  
+  |----3:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29272
+     cardinality=0, avgRowSize=16.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`b`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 03
+    BUCKET_SHFFULE_HASH_PARTITIONED: `b`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29278
+     cardinality=0, avgRowSize=16.0, numNodes=1
+SELECT * FROM t1, t2 WHERE a<=>b;
+a	b
+2001-01-01 00:00:00	2001#01#01
+NULL	NULL
+NULL	NULL
+DROP TABLE t1;
+DROP TABLE t2;
+# Join on two double columns.
+CREATE TABLE t1 (col1 DECIMAL(6, 2))
+DISTRIBUTED BY HASH(col1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+CREATE TABLE t2 (col1 DECIMAL(6, 2))
+DISTRIBUTED BY HASH(col1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t1 VALUES (0), (1.1), (3.3), (5.5), (7.7), (NULL);
+INSERT INTO t2 VALUES (0), (1.1), (1.11), (5.5), (6.6), (NULL);
+ANALYZE TABLE t1;
+ANALYZE TABLE t2;
+EXPLAIN
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2>
+    <slot 3>
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1`
+
+  VRESULT SINK
+
+  2:VHASH JOIN
+  |  join op: INNER JOIN(BUCKET_SHUFFLE)[Tables are not in the same group]
+  |  equal join conjunct: `t1`.`col1` = `t2`.`col1`
+  |  runtime filters: RF000[in_or_bloom] <- `t2`.`col1`
+  |  cardinality=0
+  |  vec output tuple id: 2
+  |  vIntermediate tuple ids: 3 4 
+  |  output slot ids: 2 3 
+  |  hash output slot ids: 0 1 
+  |  
+  |----3:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     runtime filters: RF000[in_or_bloom] -> `t1`.`col1`
+     partitions=1/1, tablets=1/1, tabletList=29301
+     cardinality=0, avgRowSize=16.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`col1`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 03
+    BUCKET_SHFFULE_HASH_PARTITIONED: `t2`.`col1`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29307
+     cardinality=0, avgRowSize=16.0, numNodes=1
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1 ORDER BY t1.col1;
+col1	col1
+0.00	0.00
+1.10	1.10
+5.50	5.50
+EXPLAIN
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 <=> t2.col1;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2>
+    <slot 3>
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1`
+
+  VRESULT SINK
+
+  2:VHASH JOIN
+  |  join op: INNER JOIN(BUCKET_SHUFFLE)[Tables are not in the same group]
+  |  equal join conjunct: `t1`.`col1` <=> `t2`.`col1`
+  |  cardinality=0
+  |  vec output tuple id: 2
+  |  vIntermediate tuple ids: 3 4 
+  |  output slot ids: 2 3 
+  |  hash output slot ids: 0 1 
+  |  
+  |----3:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29301
+     cardinality=0, avgRowSize=16.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`col1`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 03
+    BUCKET_SHFFULE_HASH_PARTITIONED: `t2`.`col1`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29307
+     cardinality=0, avgRowSize=16.0, numNodes=1
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 <=> t2.col1;
+col1	col1
+0.00	0.00
+1.10	1.10
+5.50	5.50
+NULL	NULL
+DROP TABLE t1;
+DROP TABLE t2;
+# Join on two decimal columns.
+CREATE TABLE t1 (col1 DECIMAL(6, 2))
+DISTRIBUTED BY HASH(col1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+CREATE TABLE t2 (col1 DECIMAL(6, 2))
+DISTRIBUTED BY HASH(col1) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+);
+INSERT INTO t1 VALUES (0), (1.1), (3.3), (5.5), (7.7), (NULL);
+INSERT INTO t2 VALUES (0), (1.1), (1.10), (5.5), (6.6), (NULL);
+ANALYZE TABLE t1;
+ANALYZE TABLE t2;
+EXPLAIN
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2>
+    <slot 3>
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1`
+
+  VRESULT SINK
+
+  2:VHASH JOIN
+  |  join op: INNER JOIN(BUCKET_SHUFFLE)[Tables are not in the same group]
+  |  equal join conjunct: `t1`.`col1` = `t2`.`col1`
+  |  runtime filters: RF000[in_or_bloom] <- `t2`.`col1`
+  |  cardinality=0
+  |  vec output tuple id: 2
+  |  vIntermediate tuple ids: 3 4 
+  |  output slot ids: 2 3 
+  |  hash output slot ids: 0 1 
+  |  
+  |----3:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     runtime filters: RF000[in_or_bloom] -> `t1`.`col1`
+     partitions=1/1, tablets=1/1, tabletList=29332
+     cardinality=0, avgRowSize=16.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`col1`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 03
+    BUCKET_SHFFULE_HASH_PARTITIONED: `t2`.`col1`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29337
+     cardinality=0, avgRowSize=16.0, numNodes=1
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1 ORDER BY t1.col1;
+col1	col1
+0.00	0.00
+1.10	1.10
+1.10	1.10
+5.50	5.50
+EXPLAIN
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 <=> t2.col1;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    <slot 2>
+    <slot 3>
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1`
+
+  VRESULT SINK
+
+  2:VHASH JOIN
+  |  join op: INNER JOIN(BUCKET_SHUFFLE)[Tables are not in the same group]
+  |  equal join conjunct: `t1`.`col1` <=> `t2`.`col1`
+  |  cardinality=0
+  |  vec output tuple id: 2
+  |  vIntermediate tuple ids: 3 4 
+  |  output slot ids: 2 3 
+  |  hash output slot ids: 0 1 
+  |  
+  |----3:VEXCHANGE
+  |       offset: 0
+  |    
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29332
+     cardinality=0, avgRowSize=16.0, numNodes=1
+
+PLAN FRAGMENT 1
+
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t2`.`col1`
+
+  STREAM DATA SINK
+    EXCHANGE ID: 03
+    BUCKET_SHFFULE_HASH_PARTITIONED: `t2`.`col1`
+
+  1:VOlapScanNode
+     TABLE: default_cluster:test.t2(t2), PREAGGREGATION: ON
+     partitions=1/1, tablets=1/1, tabletList=29337
+     cardinality=0, avgRowSize=16.0, numNodes=1
+SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 <=> t2.col1;
+col1	col1
+0.00	0.00
+1.10	1.10
+1.10	1.10
+5.50	5.50
+NULL	NULL
+DROP TABLE t1;
+DROP TABLE t2;

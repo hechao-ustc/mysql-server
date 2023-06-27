@@ -1,0 +1,30 @@
+# Tests of the AES KDF hkdf functionality
+#### AES_ENCRYPT return type
+# must work and return a string
+SELECT TO_BASE64(AES_ENCRYPT('my_text', 'my_key_string', '', 'hkdf'));
+to_base64(aes_encrypt('my_text', '***''my_key_string', '', 'hkdf'))
+NULL
+# must return 16
+SELECT LENGTH(AES_ENCRYPT('my_text', 'my_key_string', '', 'hkdf'));
+length(aes_encrypt('my_text', '***''my_key_string', '', 'hkdf'))
+NULL
+# must be equal
+SELECT AES_ENCRYPT('my_text', 'my_key_string', '', 'hkdf') = AES_ENCRYPT('my_text', 'my_key_string', '', 'hkdf');
+aes_encrypt('my_text', '***''my_key_string', '', 'hkdf') = aes_encrypt('my_text', '***''my_key_string', '', 'hkdf')
+NULL
+# Tests of AES strong key generation
+# Strong key generation with KDF, should not be equal keys
+SELECT AES_ENCRYPT('my_text', repeat("x",32), '', 'hkdf') = AES_ENCRYPT('my_text', repeat("y",32), '', 'hkdf');
+aes_encrypt('my_text', '***'repeat('x', 32), '', 'hkdf') = aes_encrypt('my_text', '***'repeat('y', 32), '', 'hkdf')
+NULL
+# Strong key generation with KDF, should not be equal keys
+SELECT AES_ENCRYPT('my_text', repeat("x",32), '', 'hkdf') = AES_ENCRYPT('my_text', '\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0', '', 'hkdf');
+aes_encrypt('my_text', '***'repeat('x', 32), '', 'hkdf') = aes_encrypt('my_text', '***''
+NULL
+#### AES_ENCRYPT KDF hkdf parameters
+select TO_BASE64(AES_ENCRYPT('my_text','my_key_string', '', 'hkdf'));
+to_base64(aes_encrypt('my_text', '***''my_key_string', '', 'hkdf'))
+NULL
+SELECT 'my_text' = AES_DECRYPT(AES_ENCRYPT('my_text', 'my_key_string', '', 'hkdf'), 'my_key_string', '', 'hkdf');
+'my_text' = aes_decrypt(aes_encrypt('my_text', '***''my_key_string', '', 'hkdf'), '***''my_key_string', '', 'hkdf')
+NULL

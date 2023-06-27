@@ -1,0 +1,296 @@
+#
+# Test of unions
+#
+--source include/elide_costs.inc
+
+--disable_warnings
+drop table if exists t1;
+drop table if exists t2;
+drop table if exists t3;
+drop table if exists t4;
+drop table if exists t5;
+drop table if exists t6;
+--enable_warnings
+
+CREATE TABLE t1 (a int not null, b char (10) not null)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+insert into t1 values(1,'a'),(2,'b'),(3,'c'),(3,'c');
+CREATE TABLE t2 (a int not null, b char (10) not null)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+insert into t2 values (3,'c'),(4,'d'),(5,'f'),(6,'e');
+analyze table t1;
+analyze table t2;
+
+--sorted_result
+select a,b from t1 union distinct select a,b from t2;
+--sorted_result
+select a,b from t1 union all select a,b from t2;
+select a,b from t1 union all select a,b from t2 order by b;
+--sorted_result
+select a,b from t1 union all select a,b from t2 union select 7,'g';
+--sorted_result
+select 0,'#' union select a,b from t1 union all select a,b from t2 union select 7,'gg';
+--sorted_result
+select a,b from t1 union select a,b from t1;
+--sorted_result
+select 't1',b,count(*) from t1 group by b UNION select 't2',b,count(*) from t2 group by b;
+
+# Test alternate syntax for unions
+(select a,b from t1 limit 2)  union all (select a,b from t2 order by a) limit 4;
+(select a,b from t1 limit 2)  union all (select a,b from t2 order by a limit 1);
+--replace_column 10 # 11 #
+(select a,b from t1 limit 2)  union all (select a,b from t2 order by a limit 1) order by b desc;
+--replace_column 10 # 11 #
+explain (select a,b from t1 limit 2)  union all (select a,b from t2 order by a limit 1) order by b desc;
+select count(*) from (
+(select                      a,b from t1 limit 2)  union all (select a,b from t2 order by a)) q;
+select count(*) from (
+select                      a,b from t1  union all select a,b from t2) q;
+--replace_column 10 # 11 #
+#
+# Test some error conditions with UNION
+#
+--replace_column 10 # 11 #
+explain select a,b from t1 union all select a,b from t2;
+
+
+# Test CREATE, INSERT and REPLACE
+create table t3
+PROPERTIES (
+    "replication_num" = "1"
+)
+as select a,b from t1 union all select a,b from t2;
+insert into t3 select a,b from t1 union all select a,b from t2;
+
+drop table t1;
+drop table t2;
+drop table t3;
+
+
+create table t1 (a int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+create table t2 (a int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+insert into t1 values (1),(2),(3),(4),(5);
+insert into t2 values (11),(12),(13),(14),(15);
+(select * from t1 limit 2) union (select * from t2 limit 3) limit 4;
+(select * from t1 limit 2) union (select * from t2 limit 3);
+(select * from t1 limit 2) union (select * from t2 limit 20,3);
+set SQL_SELECT_LIMIT=2;
+(select * from t1 limit 1) union (select * from t2 limit 3);
+(select * from t1 limit 3) intersect (select * from t1 limit 3);
+(select * from t1 limit 4) except (select * from t1 limit 1);
+set SQL_SELECT_LIMIT=DEFAULT;
+drop table t1;
+drop table t2;
+
+#
+# Test error with left join
+#
+
+CREATE TABLE t1 (
+  cid smallint(5) NOT NULL default '0',
+  cv varchar(250) NOT NULL default ''
+)
+UNIQUE KEY(cid)
+DISTRIBUTED BY HASH(cid) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+INSERT INTO t1 VALUES (8,'dummy');
+CREATE TABLE t2 (
+  cid bigint(20) NOT NULL,
+  cap varchar(255) NOT NULL default ''
+)
+UNIQUE KEY(cid)
+DISTRIBUTED BY HASH(cid) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+CREATE TABLE t3 (
+  gid bigint(20) NOT NULL,
+  gn varchar(255) NOT NULL default '',
+  must tinyint(4) default NULL
+)
+UNIQUE KEY(gid)
+DISTRIBUTED BY HASH(gid) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+INSERT INTO t3 VALUES (1,'V1',NULL);
+CREATE TABLE t4 (
+  uid bigint(20) NOT NULL default '0',
+  gid bigint(20) default NULL,
+  rid bigint(20) default NULL,
+  cid bigint(20) default NULL
+)
+UNIQUE KEY(uid,gid,rid,cid)
+DISTRIBUTED BY HASH(uid) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+INSERT INTO t4 VALUES (1,1,NULL,NULL);
+CREATE TABLE t5 (
+  rid bigint(20) NOT NULL,
+  rl varchar(255) NOT NULL default ''
+)
+UNIQUE KEY(rid)
+DISTRIBUTED BY HASH(rid) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+CREATE TABLE t6 (
+  uid bigint(20) NOT NULL,
+  un varchar(250) NOT NULL default '',
+  uc smallint(5) NOT NULL default '0'
+)
+UNIQUE KEY(uid)
+DISTRIBUTED BY HASH(uid) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+INSERT INTO t6 VALUES (1,'test',8);
+
+SELECT t4.uid, t5.rl, t3.gn as g1, t4.cid, t4.gid as gg FROM t3, t6, t1, t4 left join t5 on t5.rid = t4.rid left join t2 on t2.cid = t4.cid WHERE t3.gid=t4.gid AND t6.uid = t4.uid AND t6.uc  = t1.cid AND t1.cv = "dummy" AND t6.un = "test";
+SELECT t4.uid, t5.rl, t3.gn as g1, t4.cid, t4.gid as gg FROM t3, t6, t1, t4 left join t5 on t5.rid = t4.rid left join t2 on t2.cid = t4.cid WHERE t3.gid=t4.gid AND t6.uid = t4.uid AND t3.must IS NOT NULL AND t6.uc  = t1.cid AND t1.cv = "dummy" AND t6.un = "test";
+(SELECT t4.uid, t5.rl, t3.gn as g1, t4.cid, t4.gid as gg FROM t3, t6, t1, t4 left join t5 on t5.rid = t4.rid left join t2 on t2.cid = t4.cid WHERE t3.gid=t4.gid AND t6.uid = t4.uid AND t3.must IS NOT NULL AND t6.uc  = t1.cid AND t1.cv = "dummy" AND t6.un = "test") UNION (SELECT t4.uid, t5.rl, t3.gn as g1, t4.cid, t4.gid as gg FROM t3, t6, t1, t4 left join t5 on t5.rid = t4.rid left join t2 on t2.cid = t4.cid WHERE t3.gid=t4.gid AND t6.uid = t4.uid AND t6.uc  = t1.cid AND t1.cv = "dummy" AND t6.un = "test");
+drop table t1;
+drop table t2;
+drop table t3;
+drop table t4;
+drop table t5;
+drop table t6;
+
+#
+# Test insert ... SELECT with UNION
+#
+
+CREATE TABLE t1 (a int not null, b char (10) not null)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+insert into t1 values(1,'a'),(2,'b'),(3,'c'),(3,'c');
+CREATE TABLE t2 (a int not null, b char (10) not null)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+insert into t2 values (3,'c'),(4,'d'),(5,'f'),(6,'e');
+create table t3
+PROPERTIES (
+    "replication_num" = "1"
+)
+as select a,b from t1 union select a,b from t2;
+create table t4
+ PROPERTIES (
+     "replication_num" = "1"
+ )
+ as (select a,b from t1) union (select a,b from t2) limit 2;
+insert into  t4 select a,b from t1 union select a,b from t2;
+select * from t3;
+select * from t4;
+drop table t1;
+drop table t2;
+drop table t3;
+drop table t4;
+
+#
+# Test of SQL_CALC_FOUND_ROW handling
+#
+create table t1 (a int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+insert into t1 values (1),(2),(3);
+create table t2 (a int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+insert into t2 values (3),(4),(5);
+
+# Test global limits
+SELECT COUNT(*) FROM (
+(SELECT                     * FROM t1) UNION all (SELECT * FROM t2)) q;
+SELECT COUNT(*) FROM (
+(SELECT                     * FROM t1 LIMIT 1) UNION all (SELECT * FROM t2)) q;
+
+# Test cases where found_rows() should return number of returned rows
+SELECT COUNT(*) FROM (
+(SELECT                     * FROM t1 LIMIT 1) UNION all (SELECT * FROM t2)) q;
+SELECT COUNT(*) FROM (
+(SELECT                     * FROM t1) UNION all (SELECT * FROM t2 LIMIT 1)) q;
+SELECT COUNT(*) FROM (
+(SELECT                     * FROM t1 LIMIT 1) UNION SELECT * FROM t2) q;
+
+
+# The following examples will not be exact
+SELECT COUNT(*) FROM (
+SELECT                     * FROM t1 UNION SELECT * FROM t2) q;
+SELECT COUNT(*) FROM (
+SELECT                     * FROM t1 UNION SELECT * FROM t2) q;
+
+# Test some limits with ORDER BY
+SELECT * FROM t1 UNION SELECT * FROM t2 ORDER BY a desc LIMIT 1;
+(SELECT * FROM t1 ORDER by a) UNION ALL (SELECT * FROM t2 ORDER BY a) ORDER BY A desc LIMIT 4;
+
+drop table t1;
+drop table t2;
+
+#
+# Bug #4980: problem with explain
+#
+
+create table t1 (a int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+insert into t1 values (0), (3), (1), (2);
+analyze table t1;
+--replace_column 10 # 11 #
+explain (select * from t1) union (select * from t1) order by a;
+drop table t1;
+
+#
+# Test of bug when using the same table multiple times
+#
+create table t1 (a int not null, b int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+create table t2 (a int not null, b int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+insert into t1 values (1, 1),(2, 2),(3, 2),(4, 3);
+insert into t2 values (1, 10),(2, 11),(3, 12),(4, 13);
+analyze table t1;
+
+explain (select * from t1 where a=1) union (select * from t2 where a=1);
+--skip_if_hypergraph  # No support for const tables.
+explain (select * from t1 where a=5) union (select * from t2 where a=1);  # Tests printing of ZeroRowsIterator.
+(select * from t1 where a=5) union (select * from t2 where a=1);
+(select * from t1 where a=5 and a=6) union (select * from t2 where a=1);
+(select t1.a,t1.b from t1,t2 where t1.a=5) union (select * from t2 where a=1);
+(select * from t1 where a=1) union (select t1.a,t2.a from t1,t2 where t1.a=t2.a);
+--replace_column 10 # 11 #
+explain (select * from t1 where a=1) union (select * from t1 where b=1);
+drop table t1;
+drop table t2;

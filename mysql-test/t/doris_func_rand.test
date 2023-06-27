@@ -1,0 +1,75 @@
+--echo #
+--echo # Bug#33535379 Wrong value for RAND() expression when aggregating on empty table.
+--echo #
+
+
+CREATE TABLE t ( i1 INT, i2 INT)
+DISTRIBUTED BY HASH(i1) BUCKETS 1
+   PROPERTIES (
+   "replication_num" = "1"
+   );
+# Use a simple random expression on an empty table.
+ANALYZE TABLE t;
+let $query= INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000) FROM t;
+eval EXPLAIN $query;
+eval $query;
+SELECT * FROM t;
+
+# Use a simple random expression on a non-empty table.
+INSERT INTO t VALUES (1,1),(2,2),(3,3);
+ANALYZE TABLE t;
+eval EXPLAIN $query;
+eval $query;
+SELECT * FROM t;
+
+# Use a combined random and INNER_TABLE_BIT expression on an empty table.
+TRUNCATE TABLE t;
+ANALYZE TABLE t;
+let $query= INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000)
+  + EXTRACT(YEAR FROM NOW()) DIV 1000 FROM t;
+
+eval EXPLAIN $query;
+eval $query;
+SELECT * FROM t;
+
+# Use a combined random and INNER_TABLE_BIT expression on a non-empty table.
+INSERT INTO t VALUES (1,1),(2,2),(3,3);
+ANALYZE TABLE t;
+eval EXPLAIN $query;
+eval $query;
+SELECT * FROM t;
+
+# Use a combined random and INNER_TABLE_BIT expression with GROUP BY
+# on a non-empty table.
+let $query= INSERT INTO t SELECT MAX(i1), FLOOR(RAND(0)*1000)
+  + EXTRACT(YEAR FROM NOW()) DIV 1000 FROM t GROUP BY i2;
+ANALYZE TABLE t;
+eval EXPLAIN $query;
+eval $query;
+# It depends on the plan which i1 is paired with which i2, so check
+# each column separately.
+--sorted_result
+SELECT i1 FROM t;
+--sorted_result
+SELECT i2 FROM t;
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#33834514: 'RAND(0)' gives inconsistent results with hypergraph
+--echo #
+
+CREATE TABLE t (i INT)
+DISTRIBUTED BY HASH(i) BUCKETS 1
+   PROPERTIES (
+   "replication_num" = "1"
+   );
+INSERT INTO t VALUES (1), (2), (3);
+
+# An uncorrelated derived table on the inner side of a join should
+# only be materialized once. The hypergraph optimizer used to
+# rematerialize it for every evaluation of the inner side if it was
+# non-deterministic.
+SELECT r FROM t LEFT JOIN (SELECT RAND(0) AS r) AS dt ON TRUE;
+
+DROP TABLE t;

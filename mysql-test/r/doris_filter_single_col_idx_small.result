@@ -1,0 +1,101 @@
+# 
+# Test that on a tiny table, the computed filtering effect is not
+# less than one row for the basic condition filter constants
+#
+CREATE TABLE t1(
+col1_pk INTEGER,
+col2 INTEGER
+)UNIQUE KEY(`col1_pk`)
+DISTRIBUTED BY HASH(col1_pk) BUCKETS 1
+PROPERTIES (
+"replication_num" = "1"
+    );
+INSERT INTO t1 VALUES (0,0),(1,1),(2,2),(3,3),(4,4),(5,5),(6,6),(7,7);
+# Filtered column should be 1 / (size of table) and larger than 
+# COND_FILTER_EQUALITY
+EXPLAIN SELECT * FROM t1 WHERE col2 = 2;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    `default_cluster:test`.`t1`.`col1_pk`
+    `default_cluster:test`.`t1`.`col2`
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1_pk`
+
+  VRESULT SINK
+
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. No AggregateInfo
+     PREDICATES: `col2` = 2 AND `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20090
+     cardinality=0, avgRowSize=9.0, numNodes=1
+# Filtered column should be (size of table - 1) / (size of table) 
+# and less than COND_FILTER_EQUALITY
+EXPLAIN SELECT * FROM t1 WHERE col2 <> 2;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    `default_cluster:test`.`t1`.`col1_pk`
+    `default_cluster:test`.`t1`.`col2`
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1_pk`
+
+  VRESULT SINK
+
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. No AggregateInfo
+     PREDICATES: `col2` != 2 AND `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20090
+     cardinality=0, avgRowSize=9.0, numNodes=1
+# Filtered column should be 1 / (size of table) and larger than
+# COND_FILTER_BETWEEN
+EXPLAIN SELECT * FROM t1 WHERE col2 BETWEEN 2 AND 4;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    `default_cluster:test`.`t1`.`col1_pk`
+    `default_cluster:test`.`t1`.`col2`
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1_pk`
+
+  VRESULT SINK
+
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. No AggregateInfo
+     PREDICATES: `col2` >= 2 AND `col2` <= 4 AND `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20090
+     cardinality=0, avgRowSize=9.0, numNodes=1
+# Filtered column should be (size of table - 1) / (size of table)
+# and less than COND_FILTER_BETWEEN
+EXPLAIN SELECT * FROM t1 WHERE col2 NOT BETWEEN 2 AND 4;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    `default_cluster:test`.`t1`.`col1_pk`
+    `default_cluster:test`.`t1`.`col2`
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1_pk`
+
+  VRESULT SINK
+
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. No AggregateInfo
+     PREDICATES: `col2` < 2 OR `col2` > 4 AND `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20090
+     cardinality=0, avgRowSize=9.0, numNodes=1
+TRUNCATE TABLE t1;
+INSERT INTO t1 VALUES (0,0),(1,1);
+# Filtered column should be 1 / (size of table) and larger than
+# COND_FILTER_INEQUALITY
+EXPLAIN SELECT * FROM t1 WHERE col2 > 1;
+Explain String
+PLAN FRAGMENT 0
+  OUTPUT EXPRS:
+    `default_cluster:test`.`t1`.`col1_pk`
+    `default_cluster:test`.`t1`.`col2`
+  PARTITION: HASH_PARTITIONED: `default_cluster:test`.`t1`.`col1_pk`
+
+  VRESULT SINK
+
+  0:VOlapScanNode
+     TABLE: default_cluster:test.t1(t1), PREAGGREGATION: OFF. Reason: __DORIS_DELETE_SIGN__ is used as conjuncts. No AggregateInfo
+     PREDICATES: `col2` > 1 AND `default_cluster:test`.`t1`.`__DORIS_DELETE_SIGN__` = 0
+     partitions=1/1, tablets=1/1, tabletList=20102
+     cardinality=0, avgRowSize=9.0, numNodes=1
+DROP TABLE t1;

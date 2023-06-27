@@ -1,0 +1,158 @@
+# Tests of the AES functionality
+#
+# WL#6781: Support multiple AES encryption modes
+#
+#### AES_ENCRYPT return type
+# must be aes-128-ecb
+SELECT @@block_encryption_mode;
+@@block_encryption_mode
+
+# must work and return a string
+SELECT TO_BASE64(AES_ENCRYPT('a', 'b'));
+to_base64(aes_encrypt('a', '***', 'AES_128_ECB'))
+VIE8melxXCgTE0xsFy5JTg==
+# must return 16
+SELECT LENGTH(AES_ENCRYPT('a', 'b'));
+length(aes_encrypt('a', '***', 'AES_128_ECB'))
+16
+# must be equal
+SELECT AES_ENCRYPT('a', 'b') = AES_ENCRYPT('a', 'b');
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('a', '***', 'AES_128_ECB')
+1
+#### AES_ENCRYPT parameters
+# must return NULL
+SELECT AES_ENCRYPT('a', NULL);
+aes_encrypt('a', '***', 'AES_128_ECB')
+NULL
+SELECT AES_ENCRYPT(NULL, 'a');
+aes_encrypt(NULL, '***', 'AES_128_ECB')
+NULL
+SELECT AES_ENCRYPT(NULL, NULL);
+aes_encrypt(NULL, '***', 'AES_128_ECB')
+NULL
+# must return value
+SELECT TO_BASE64(AES_ENCRYPT('a', 0));
+to_base64(aes_encrypt('a', '***', 'AES_128_ECB'))
+aYJapBqdtJb5LdZYNnyvSQ==
+SELECT TO_BASE64(AES_ENCRYPT('a', 12.04));
+to_base64(aes_encrypt('a', '***', 'AES_128_ECB'))
+zsb8jPtLNXiWI5Kzwf0V0A==
+SELECT TO_BASE64(AES_ENCRYPT(0, 'a'));
+to_base64(aes_encrypt('0', '***', 'AES_128_ECB'))
+6k2i7KJUMBKiOkGToSMgxg==
+SELECT TO_BASE64(AES_ENCRYPT(12.04, 'a'));
+to_base64(aes_encrypt('12.04', '***', 'AES_128_ECB'))
+TXCHis1z3ZT2p2daWZfwLg==
+SELECT TO_BASE64(AES_ENCRYPT(0, 0));
+to_base64(aes_encrypt('0', '***', 'AES_128_ECB'))
+Nop3grbtyVAOy+Ycpyx7RA==
+SELECT TO_BASE64(AES_ENCRYPT(12.04, 12.04));
+to_base64(aes_encrypt('12.04', '***', 'AES_128_ECB'))
+W4FA3x/RuDuacxCfEQY4pQ==
+#### parameter conversion
+must be equal
+SELECT AES_ENCRYPT('a', 12.04) = AES_ENCRYPT('a', '12.04');
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('a', '***', 'AES_128_ECB')
+1
+SELECT AES_ENCRYPT('a', 0) = AES_ENCRYPT('a', '0');
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('a', '***', 'AES_128_ECB')
+1
+SELECT AES_ENCRYPT(12.04, 'a') = AES_ENCRYPT('12.04', 'a');
+aes_encrypt('12.04', '***', 'AES_128_ECB') = aes_encrypt('12.04', '***', 'AES_128_ECB')
+1
+SELECT AES_ENCRYPT(0, 'a') = AES_ENCRYPT('0', 'a');
+aes_encrypt('0', '***', 'AES_128_ECB') = aes_encrypt('0', '***', 'AES_128_ECB')
+1
+SELECT AES_ENCRYPT('\x0Z', 'a') = AES_ENCRYPT('\x0Z', 'a');
+aes_encrypt('x0Z', '***', 'AES_128_ECB') = aes_encrypt('x0Z', '***', 'AES_128_ECB')
+1
+SELECT AES_ENCRYPT('a', '\x0Z') = AES_ENCRYPT('a', '\x0Z');
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('a', '***', 'AES_128_ECB')
+1
+# must not be equal
+SELECT AES_ENCRYPT('a', '\x0Y') = AES_ENCRYPT('a', '\x0Z');
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('a', '***', 'AES_128_ECB')
+0
+SELECT AES_ENCRYPT('\x0Y', 'a') = AES_ENCRYPT('\x0Z', 'a');
+aes_encrypt('x0Y', '***', 'AES_128_ECB') = aes_encrypt('x0Z', '***', 'AES_128_ECB')
+0
+#### algorithm
+# must not be equal
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('b', 'a');
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('b', '***', 'AES_128_ECB')
+0
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('a', 'b');
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('a', '***', 'AES_128_ECB')
+0
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('aa', 'a');
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('aa', '***', 'AES_128_ECB')
+0
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('a', 'aa');
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('a', '***', 'AES_128_ECB')
+0
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT(REPEAT('a',1000), 'a');
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt(repeat('a', 1000), '***', 'AES_128_ECB')
+0
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('a', REPEAT('a',1000));
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('a', '***', 'AES_128_ECB')
+0
+#### IV
+# must be equal
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('a', 'a', REPEAT('a', 16));
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('a', '***', repeat('a', 16), 'AES_128_ECB')
+1
+SELECT AES_ENCRYPT('a', 'a') = AES_ENCRYPT('a', 'a', REPEAT('b', 16));
+aes_encrypt('a', '***', 'AES_128_ECB') = aes_encrypt('a', '***', repeat('b', 16), 'AES_128_ECB')
+1
+# must return a warning
+SELECT TO_BASE64(AES_ENCRYPT('a', 'a', 'a'));
+to_base64(aes_encrypt('a', '***', 'a', 'AES_128_ECB'))
+eyBXXaEGdZ29saMu4tmndA==
+# must pass
+SELECT TO_BASE64(AES_ENCRYPT('a', 'a', NULL));
+to_base64(aes_encrypt('a', '***', NULL, 'AES_128_ECB'))
+NULL
+SELECT TO_BASE64(AES_ENCRYPT('a', 'a', REPEAT('a', 1024)));
+to_base64(aes_encrypt('a', '***', repeat('a', 1024), 'AES_128_ECB'))
+eyBXXaEGdZ29saMu4tmndA==
+#### AES_DECRYPT
+# must return 1
+SELECT LENGTH(AES_DECRYPT(AES_ENCRYPT('a', 'a'), 'a'));
+length(aes_decrypt(aes_encrypt('a', '***', 'AES_128_ECB'), '***', 'AES_128_ECB'))
+1
+# must be equal
+SELECT AES_DECRYPT(AES_ENCRYPT('a','a'), 'a') = 'a';
+aes_decrypt(aes_encrypt('a', '***', 'AES_128_ECB'), '***', 'AES_128_ECB') = 'a'
+1
+# must be equal
+SELECT AES_DECRYPT(AES_ENCRYPT('Жоро', 'a'), 'a') = 'Жоро';
+aes_decrypt(aes_encrypt('Жоро', '***', 'AES_128_ECB'), '***', 'AES_128_ECB') = 'Жоро'
+1
+# must be NULL
+SELECT AES_DECRYPT(NULL, 'a');
+aes_decrypt(NULL, '***', 'AES_128_ECB')
+NULL
+SELECT AES_DECRYPT('a', NULL);
+aes_decrypt('a', '***', 'AES_128_ECB')
+NULL
+SELECT AES_DECRYPT(NULL, NULL);
+aes_decrypt(NULL, '***', 'AES_128_ECB')
+NULL
+#### AES_DECRYPT IV
+# must be equal
+SELECT 'a' = AES_DECRYPT(AES_ENCRYPT('a', 'a'), 'a', NULL);
+'a' = aes_decrypt(aes_encrypt('a', '***', 'AES_128_ECB'), '***', NULL, 'AES_128_ECB')
+NULL
+SELECT 'a' = AES_DECRYPT(AES_ENCRYPT('a', 'a'), 'a', REPEAT('a',16));
+'a' = aes_decrypt(aes_encrypt('a', '***', 'AES_128_ECB'), '***', repeat('a', 16), 'AES_128_ECB')
+1
+SELECT 'a' = AES_DECRYPT(AES_ENCRYPT('a', 'a'), 'a', REPEAT('a',100));
+'a' = aes_decrypt(aes_encrypt('a', '***', 'AES_128_ECB'), '***', repeat('a', 100), 'AES_128_ECB')
+1
+# must return a warning
+SELECT TO_BASE64(AES_DECRYPT(AES_ENCRYPT('a', 'a'), 'a', 'a'));
+to_base64(aes_decrypt(aes_encrypt('a', '***', 'AES_128_ECB'), '***', 'a', 'AES_128_ECB'))
+YQ==
+#
+# End of 5.7 tests
+#

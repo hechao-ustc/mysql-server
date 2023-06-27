@@ -1,0 +1,5 @@
+# Tests of the AES CFB8 block mode
+SET SESSION block_encryption_mode=default;
+#
+# End of 5.7 tests
+#
