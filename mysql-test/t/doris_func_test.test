@@ -1,0 +1,191 @@
+--disable_warnings
+drop table if exists t1;
+drop table if exists t2;
+--enable_warnings
+#
+# Testing of comparison functions
+#
+select 0=0,1>0,1>=1,1<0,1<=0,1!=0;
+select "a"<"b","a"<="b","b">="a","b">"a","a"="A","a"<>"b";
+select "a "="A", "A "="a", "a  " <= "A b"; 
+select "abc" like "a%", "abc" not like "%d%", "a%" like "a\%","abc%" like "a%\%","abcd" like "a%b_%d", "a" like "%%a","abcde" like "a%_e","abc" like "abc%";
+select "a" like "%%b","a" like "%%ab","ab" like "a\%", "ab" like "_", "ab" like "ab_", "abc" like "%_d", "abc" like "abc%d";
+select 'abc' like '%c','abcabc' like '%c',  "ab" like "", "ab" like "a", "ab" like "ab";
+select "Det här är svenska" regexp "h[[:alpha:]]+r", "aba" regexp "^(a|b)*$";
+select "aba" regexp concat("^","a");
+select 2 between 1 and 3, "monty" between "max" and "my",2=2 and "monty" between "max" and "my" and 3=3;
+select 'b' between 'a' and 'c', 'B' between 'a' and 'c';
+select 2 in (3,2,5,9,5,1),"monty" in ("david","monty","allan"), 1.2 in (1.4,1.2,1.0);
+select 3 ^ 11, 1 ^ 1, 1 ^ 0, 1 ^ NULL, NULL ^ 1;
+explain select 3 ^ 11, 1 ^ 1, 1 ^ 0, 1 ^ NULL, NULL ^ 1;
+select 18446744073709551615, 18446744073709551615 DIV 1, 18446744073709551615 DIV 2;
+
+create table t1 (a int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+insert into t1 values (1);
+analyze table t1;
+select - a from t1;
+explain select - a from t1;
+drop table t1;
+
+#
+# Wrong usage of functions
+#
+
+select 5 between 0 and 10 between 0 and 1,(5 between 0 and 10) between 0 and 1;
+#
+# Test for GREATEST() and LEAST() bug, which segfaulted 4.1.1 server
+#
+CREATE TABLE t1 (d varchar(6), k int)
+DISTRIBUTED BY HASH(d) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+INSERT INTO t1 VALUES (NULL, 2);
+SELECT GREATEST(d,d) FROM t1 WHERE k=2;
+DROP TABLE t1;
+
+#
+# Bug#23411: The "%" (MOD) operator is not documented; MOD-ing zero returns strange result
+# Manual: "Division by zero produces a NULL result"
+#
+select (12%0) <=> null      as '1';
+select (12%0) is null       as '1';
+select 12%0                 as 'NULL';
+select 12%2                 as '0';
+select 12%NULL              as 'NULL';
+select 12 % null            as 'NULL';
+select null % 12            as 'NULL';
+select null % 0             as 'NULL';
+select 0 % null             as 'NULL';
+
+select mod(12.0, 0)         as 'NULL';
+select mod(12, 0.0)         as 'NULL';
+select mod(12, NULL)        as 'NULL';
+select mod(12.0, NULL)      as 'NULL';
+select mod(NULL, 2)         as 'NULL';
+select mod(NULL, 2.0)       as 'NULL';
+
+
+#
+# Bug#6726: NOT BETWEEN parse failure
+#
+create table t1 (a int, b int)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+insert into t1 values (1,2), (2,3), (3,4), (4,5);
+select * from t1 where a not between 1 and 2;
+select * from t1 where a not between 1 and 2 and b not between 3 and 4;
+drop table t1;
+
+# End of 4.1 tests
+
+--echo #
+--echo # Bug#22523685 FUNCTION GREATEST AND LEAST WORKS INCORRECTLY
+--echo #              WITH BIGINT UNSIGNED VALUE
+--echo #
+
+SELECT greatest( 9223372036854775807 , 9223372036854775808 ) as g;
+SELECT least   ( 9223372036854775807 , 9223372036854775808 ) as l;
+
+SELECT greatest (9223372036854775808, -1, 18446744073709551615 ) as g;
+SELECT least    (9223372036854775808, -1, 18446744073709551615 ) as l;
+
+SELECT greatest (9223372036854775808, 18446744073709551615) as g;
+SELECT least    (9223372036854775808, 18446744073709551615) as l;
+
+
+# Strings only, strings and integers, and integers only
+SELECT GREATEST('11', '5', '2');
+SELECT GREATEST('11', 5, 2);
+SELECT GREATEST(11, 5, 2);
+SELECT LEAST('11', '5', '2');
+SELECT LEAST('11', 5, 2);
+SELECT LEAST(11, 5, 2);
+
+# Date and integers, and date and strings
+SELECT GREATEST(date '2005-05-05', 20010101, 20040404, 20030303);
+SELECT LEAST(date '2005-05-05', 20030303, 20010101, 20040404);
+SELECT GREATEST(date '2005-05-05', '20010101', '20040404', '20030303');
+
+
+# Dates only
+SELECT GREATEST('95-05-05', date '10-10-10');
+SELECT GREATEST(date '1995-05-05', '10-10-10');
+
+# Plus operations with integers and doubles.
+SELECT GREATEST('11', '5', '2') + 0;
+SELECT GREATEST('11', 5, 2) + 0;
+SELECT GREATEST(11, 5, 2) + 0;
+SELECT GREATEST(date '2005-05-05', 20010101, 20040404, 20030303) + 0;
+SELECT GREATEST('95-05-05', date '10-10-10') + 0;
+SELECT GREATEST(date '1995-05-05', '10-10-10') + 0;
+SELECT GREATEST('11', '5', '2') + 0.00;
+SELECT GREATEST('11', 5, 2) + 0.00;
+SELECT GREATEST(11, 5, 2) + 0.00;
+SELECT GREATEST(date '1995-05-05', 19910101, 20050505, 19930303) + 0.00;
+SELECT GREATEST('95-05-05', date '10-10-10') + 0.00;
+SELECT GREATEST(date '1995-05-05', '10-10-10') + 0.00;
+
+-- echo # End of test for Bug#25123839
+
+-- echo #
+-- echo # Bug#13364839: GREATEST() DOES NOT ALWAYS RETURN SAME SIGNNESS OF ARGUMENT TYPES
+-- echo #
+
+CREATE TABLE t1 (a INT, b LARGEINT)
+UNIQUE KEY(a)
+DISTRIBUTED BY HASH(a) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+INSERT INTO t1 VALUES (1, 13836376518955650385);
+SELECT * FROM t1;
+DROP TABLE t1;
+
+
+--echo #
+--echo # Bug#29467577 ASSERTION `!UNSIGNED_FLAG ||
+--echo #              (UNSIGNED_FLAG && ARGS[I]->UNSIGNED_FLAG)' FAILED.
+--echo #
+
+CREATE TABLE t1 (c1 BIGINT, c2 BIGINT)
+DISTRIBUTED BY HASH(c1) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+INSERT INTO t1 VALUES (202, 1);
+SELECT * FROM t1 WHERE (GREATEST(c1, c2) = 42) AND (c2 = 1);
+DROP TABLE t1;
+
+
+--echo #
+--echo #Bug 33758255 - An edge case for base BUG 32038406 -
+--echo #               FILESORT USED FOR ORDER BY ...DESC EVEN WHEN
+--echo #               DESCENDING INDEX AVAILABLE AND USED
+--echo #
+
+CREATE TABLE t1 (
+c1 VARCHAR(10),
+c2 VARCHAR(10),
+c3 DATE NOT NULL,
+c4 INT)
+UNIQUE KEY(c1, c2, c3)
+DISTRIBUTED BY HASH(c1) BUCKETS 1
+PROPERTIES (
+    "replication_num" = "1"
+);
+
+EXPLAIN
+SELECT c1 FROM t1
+WHERE c1= 'abc' AND
+      c2 IN ('def') AND
+      c3 BETWEEN '2022-03-16' AND '2022-03-16'
+ORDER BY c3 DESC;
+
+DROP TABLE t1;
