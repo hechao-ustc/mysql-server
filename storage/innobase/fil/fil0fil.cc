@@ -5827,11 +5827,15 @@ dberr_t fil_ibd_open(bool validate, fil_type_t purpose, space_id_t space_id,
   }
 
   if (validate && !old_space && !for_import) {
-    if (df.server_version() > DD_SPACE_CURRENT_SRV_VERSION) {
-      ib::error(ER_IB_MSG_1272, ulong{DD_SPACE_CURRENT_SRV_VERSION},
-                ulonglong{df.server_version()});
-      /* Server version is less than the tablespace server version.
-      We don't support downgrade for 8.0 server, so report error */
+    if (df.server_version() / 100 > DD_SPACE_CURRENT_SRV_VERSION / 100) {
+      ib::error(ER_INVALID_SERVER_DOWNGRADE_NOT_PATCH,
+                static_cast<uint32_t>(df.server_version()),
+                DD_SPACE_CURRENT_SRV_VERSION);
+      /* Server version is lower than the tablespace server version.
+      We don't support downgrade except for patches, so report error.
+      If the major/minor version is the same, and only the patch
+      version is lower, then this is a patch downgrade. This will be
+      checked in more detail while bootstrapping the SQL layer. */
       return DB_SERVER_VERSION_LOW;
     }
     ut_ad(df.space_version() == DD_SPACE_CURRENT_SPACE_VERSION);
@@ -8546,7 +8550,7 @@ dberr_t fil_tablespace_iterate(const Encryption_metadata &encryption_metadata,
   DBUG_EXECUTE_IF("fil_tablespace_iterate_failure", {
     static bool once;
 
-    if (!once || ut::random_from_interval(0, 10) == 5) {
+    if (!once || ut::random_from_interval_fast(0, 10) == 5) {
       once = true;
       success = false;
       os_file_close(file);
@@ -9819,8 +9823,6 @@ dberr_t Fil_system::open_for_recovery(space_id_t space_id) {
     return DB_CORRUPTION;
   }
 
-  dberr_t err = DB_SUCCESS;
-
   if (status == FIL_LOAD_OK) {
     /* In the case of undo tablespace, even if the encryption flag is not
     enabled in space->flags, the encryption keys needs to be restored from
@@ -9835,14 +9837,13 @@ dberr_t Fil_system::open_for_recovery(space_id_t space_id) {
     }
 
     if (!recv_sys->dblwr->empty()) {
-      err = recv_sys->dblwr->recover(space);
-
+      recv_sys->dblwr->recover(space);
     } else {
       ib::info(ER_IB_MSG_DBLWR_1317) << "DBLWR recovery skipped for "
                                      << space->name << " ID: " << space->id;
     }
 
-    return err;
+    return DB_SUCCESS;
   }
 
   return DB_FAIL;

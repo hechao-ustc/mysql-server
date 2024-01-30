@@ -69,6 +69,7 @@ SET(MYSQL_SERVER_COMPONENT_SOURCES
   storing_auto_thd.cc
   mysql_thd_store_imp.cc
   set_variables_helper.cc
+  mysql_simple_error_log_imp.cc
   )
 
 # This static library is used to build mysqld binary and in some unit test cases
@@ -79,3 +80,6 @@ TARGET_COMPILE_DEFINITIONS(mysql_server_component_services
 TARGET_LINK_LIBRARIES(mysql_server_component_services PRIVATE extra::rapidjson)
 TARGET_LINK_LIBRARIES(mysql_server_component_services PRIVATE ext::zlib)
 ADD_DEPENDENCIES(mysql_server_component_services GenError)
+
+# Exclude mysql_server_component_services from PGO on Windows to avoid linker error LNK1248
+EXCLUDE_FROM_MSVC_PGO(mysql_server_component_services)

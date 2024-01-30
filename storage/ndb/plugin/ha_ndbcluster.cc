@@ -36,6 +36,7 @@
 #include <string>
 
 #include "m_ctype.h"
+#include "my_config.h"  // WORDS_BIGENDIAN
 #include "my_dbug.h"
 #include "sql/current_thd.h"
 #include "sql/debug_sync.h"  // DEBUG_SYNC
@@ -905,14 +906,11 @@ static inline int check_completed_operations_pre_commit(
         /* Slave will roll back and retry entire transaction. */
         ERR_RETURN(nonMaskedError);
       } else {
-        char msg[FN_REFLEN];
-        snprintf(msg, sizeof(msg),
-                 "Executing extra operations for "
-                 "conflict handling hit Ndb error %d '%s'",
-                 nonMaskedError.code, nonMaskedError.message);
-        push_warning_printf(
-            current_thd, Sql_condition::SL_ERROR, ER_EXCEPTIONS_WRITE_ERROR,
-            ER_THD(current_thd, ER_EXCEPTIONS_WRITE_ERROR), msg);
+        thd_ndb->push_ndb_error_warning(nonMaskedError);
+        thd_ndb->push_warning(
+            ER_EXCEPTIONS_WRITE_ERROR,
+            ER_THD(current_thd, ER_EXCEPTIONS_WRITE_ERROR),
+            "Failed executing extra operations for conflict handling");
         /* Slave will stop replication. */
         return ER_EXCEPTIONS_WRITE_ERROR;
       }
@@ -4246,7 +4244,7 @@ int ha_ndbcluster::prepare_conflict_detection(
     Ndb_binlog_extra_row_info extra_row_info;
     if (extra_row_info.loadFromBuffer(thd->binlog_row_event_extra_data) != 0) {
       ndb_log_warning(
-          "NDB Replica: Malformed event received on table %s "
+          "Replica: Malformed event received on table %s "
           "cannot parse. Stopping SQL thread.",
           m_share->key_string());
       return ER_REPLICA_CORRUPT_EVENT;
@@ -4293,7 +4291,7 @@ int ha_ndbcluster::prepare_conflict_detection(
       switch (opt_ndb_slave_conflict_role) {
         case SCR_NONE: {
           ndb_log_warning(
-              "NDB Replica: Conflict function %s defined on "
+              "Replica: Conflict function %s defined on "
               "table %s requires ndb_applier_conflict_role variable "
               "to be set. Stopping SQL thread.",
               conflict_fn->name, m_share->key_string());
@@ -4372,7 +4370,7 @@ int ha_ndbcluster::prepare_conflict_detection(
                (transaction_id ==
                 Ndb_binlog_extra_row_info::InvalidTransactionId))) {
     ndb_log_warning(
-        "NDB Replica: Transactional conflict detection defined on "
+        "Replica: Transactional conflict detection defined on "
         "table %s, but events received without transaction ids.  "
         "Check --ndb-log-transaction-id setting on "
         "upstream Cluster.",
@@ -4473,7 +4471,7 @@ int ha_ndbcluster::prepare_conflict_detection(
       }
     } else {
       ndb_log_warning(
-          "NDB Replica: Binlog event on table %s missing "
+          "Replica: Binlog event on table %s missing "
           "info necessary for conflict detection.  "
           "Check binlog format options on upstream cluster.",
           m_share->key_string());
@@ -6049,12 +6047,13 @@ int ha_ndbcluster::ndb_delete_row(const uchar *record,
   operations can read directly into the destination row.
 */
 int ha_ndbcluster::unpack_record(uchar *dst_row, const uchar *src_row) {
+  DBUG_TRACE;
   assert(src_row != nullptr);
 
   ptrdiff_t dst_offset = dst_row - table->record[0];
   ptrdiff_t src_offset = src_row - table->record[0];
 
-  /* Initialize the NULL bitmap. */
+  // Set the NULL flags for all fields
   memset(dst_row, 0xff, table->s->null_bytes);
 
   uchar *blob_ptr = m_blobs_buffer.get_ptr(0);
@@ -6065,34 +6064,8 @@ int ha_ndbcluster::unpack_record(uchar *dst_row, const uchar *src_row) {
     Field *field = table->field[i];
     if (!field->stored_in_db) continue;
 
-    if (likely(!field->is_flag_set(BLOB_FLAG))) {
-      if (field->is_real_null(src_offset)) {
-        /* NULL bits already set -> no further action needed. */
-      } else if (likely(field->type() != MYSQL_TYPE_BIT)) {
-        /*
-          A normal, non-NULL field (not blob or bit type).
-          Only copy actually used bytes if varstrings.
-        */
-        const uint32 actual_length = field_used_length(field, src_offset);
-        field->set_notnull(dst_offset);
-        memcpy(field->field_ptr() + dst_offset, field->field_ptr() + src_offset,
-               actual_length);
-      } else  // MYSQL_TYPE_BIT
-      {
-        Field_bit *field_bit = down_cast<Field_bit *>(field);
-        field->move_field_offset(src_offset);
-        longlong value = field_bit->val_int();
-        field->move_field_offset(dst_offset - src_offset);
-        field_bit->set_notnull();
-        /* Field_bit in DBUG requires the bit set in write_set for store(). */
-        my_bitmap_map *old_map =
-            dbug_tmp_use_all_columns(table, table->write_set);
-        ndbcluster::ndbrequire(field_bit->store(value, true) == 0);
-        dbug_tmp_restore_column_map(table->write_set, old_map);
-        field->move_field_offset(-dst_offset);
-      }
-    } else  // BLOB_FLAG
-    {
+    // Handle Field_blob (BLOB, JSON, GEOMETRY)
+    if (field->is_flag_set(BLOB_FLAG)) {
       Field_blob *field_blob = (Field_blob *)field;
       NdbBlob *ndb_blob = m_value[i].blob;
       /* unpack_record *only* called for scan result processing
@@ -6125,8 +6098,44 @@ int ha_ndbcluster::unpack_record(uchar *dst_row, const uchar *src_row) {
       field_blob->set_ptr((uint32)len64, blob_ptr);
       field_blob->move_field_offset(-dst_offset);
       blob_ptr += (len64 + 7) & ~((Uint64)7);
+      continue;
     }
-  }  // for(...
+
+    // Handle Field_bit
+    // Store value in destination even if NULL (i.e. 0)
+    if (field->type() == MYSQL_TYPE_BIT) {
+      Field_bit *field_bit = down_cast<Field_bit *>(field);
+      field->move_field_offset(src_offset);
+      longlong value = field_bit->val_int();
+      field->move_field_offset(dst_offset - src_offset);
+      if (field->is_real_null(src_offset)) {
+        // This sets the uneven highbits, located after the null bit
+        // in the Field_bit ptr, to 0
+        value = 0;
+        // Make sure destination null flag is correct
+        field->set_null(dst_offset);
+      } else {
+        field->set_notnull(dst_offset);
+      }
+      // Field_bit in DBUG requires the bit set in write_set for store().
+      my_bitmap_map *old_map =
+          dbug_tmp_use_all_columns(table, table->write_set);
+      ndbcluster::ndbrequire(field_bit->store(value, true) == 0);
+      dbug_tmp_restore_column_map(table->write_set, old_map);
+      field->move_field_offset(-dst_offset);
+      continue;
+    }
+
+    // A normal field (not blob or bit type).
+    if (field->is_real_null(src_offset)) {
+      // Field is NULL and the null flags are already set
+      continue;
+    }
+    const uint32 actual_length = field_used_length(field, src_offset);
+    field->set_notnull(dst_offset);
+    memcpy(field->field_ptr() + dst_offset, field->field_ptr() + src_offset,
+           actual_length);
+  }
 
   if (unlikely(!m_cond.check_condition())) {
     return HA_ERR_KEY_NOT_FOUND;  // False condition
@@ -7601,7 +7610,7 @@ NdbTransaction *ha_ndbcluster::start_transaction_row(
 
   Ndb *ndb = m_thd_ndb->ndb;
 
-  Uint64 tmp[(MAX_KEY_SIZE_IN_WORDS * MAX_XFRM_MULTIPLY) >> 1];
+  Uint32 tmp[MAX_KEY_SIZE_IN_WORDS * MAX_XFRM_MULTIPLY];
   char *buf = (char *)&tmp[0];
   trans =
       ndb->startTransaction(ndb_record, (const char *)record, buf, sizeof(tmp));
@@ -7629,7 +7638,7 @@ NdbTransaction *ha_ndbcluster::start_transaction_key(uint index_num,
   Ndb *ndb = m_thd_ndb->ndb;
   const NdbRecord *key_rec = m_index[index_num].ndb_unique_record_key;
 
-  Uint64 tmp[(MAX_KEY_SIZE_IN_WORDS * MAX_XFRM_MULTIPLY) >> 1];
+  Uint32 tmp[MAX_KEY_SIZE_IN_WORDS * MAX_XFRM_MULTIPLY];
   char *buf = (char *)&tmp[0];
   trans =
       ndb->startTransaction(key_rec, (const char *)key_data, buf, sizeof(tmp));
@@ -7866,7 +7875,7 @@ int ndbcluster_commit(handlerton *, THD *thd, bool all) {
            Applier retried transaction too many times, print error and exit -
            normal too many retries mechanism will cause exit
          */
-        ndb_log_error("NDB Replica: retried transaction in vain. Giving up.");
+        ndb_log_error("Replica: retried transaction in vain. Giving up.");
       }
       res = ER_GET_TEMPORARY_ERRMSG;
     } else if (trans_error.code == 4350) {  // Transaction already aborted
@@ -12499,9 +12508,9 @@ static int ndbcluster_init_abort(const char *error) {
   // flush all the buffered messages before exiting
   ndb_log_flush_buffered_messages();
   DBUG_EXECUTE("ndbcluster_init_fail1",
-               ndb_log_error_dump("ndbcluster_init_abort1"););
+               ndb_log_error("ndbcluster_init_abort1"););
   DBUG_EXECUTE("ndbcluster_init_fail2",
-               ndb_log_error_dump("ndbcluster_init_abort2"););
+               ndb_log_error("ndbcluster_init_abort2"););
 
   // Terminate things which cause server shutdown hang
   ndbcluster_binlog_end();
@@ -12560,7 +12569,7 @@ static int ndbcluster_init(void *handlerton_ptr) {
   std::function<bool()> start_channel_func = []() -> bool {
     if (!wait_setup_completed(opt_ndb_wait_setup)) {
       ndb_log_error(
-          "NDB Replica: Connection to NDB not ready after %lu seconds. "
+          "Replica: Connection to NDB not ready after %lu seconds. "
           "Consider increasing --ndb-wait-setup value",
           opt_ndb_wait_setup);
       return false;
@@ -12626,7 +12635,7 @@ static int ndbcluster_init(void *handlerton_ptr) {
   hton->pre_dd_shutdown = ndbcluster_pre_dd_shutdown;
 
   // notify_alter_table and notify_exclusive_mdl will be registered latter
-  // SO, that GSL will not be held unnecessary for non-ndb tables.
+  // SO, that GSL will not be held unnecessary for non-NDB tables.
   hton->post_ddl = ndbcluster_post_ddl;
 
   // Initialize NdbApi
@@ -12942,7 +12951,7 @@ ulonglong ha_ndbcluster::table_flags(void) const {
                 HA_GENERATED_COLUMNS | 0;
 
   /*
-    To allow for logging of ndb tables during stmt based logging;
+    To allow for logging of NDB tables during stmt based logging;
     flag cabablity, but also turn off flag for OWN_BINLOGGING
   */
   if (thd->variables.binlog_format == BINLOG_FORMAT_STMT)
@@ -13840,16 +13849,13 @@ int ha_ndbcluster::multi_range_start_retrievals(uint starting_range) {
         type_loc = enum_empty_unique_range;
       else {
         /*
-          This shouldn't really happen.
-
-          There aren't really any other errors that could happen on the read
-          without also aborting the transaction and causing execute() to
-          return failure.
-
-          (But we can still safely return an error code in non-debug builds).
+          Some operation error that did not cause transaction
+          rollback, but was unexpected when performing these
+          lookups.
+          Return error to caller, expecting caller to rollback
+          transaction.
         */
-        assert(false);
-        ERR_RETURN(error); /* purecov: deadcode */
+        ERR_RETURN(error);
       }
     }
   }
@@ -14777,7 +14783,7 @@ uint32 ha_ndbcluster::calculate_key_hash_value(Field **field_array) {
   struct Ndb::Key_part_ptr *key_data_ptr = &key_data[0];
   Uint32 i = 0;
   int ret_val;
-  Uint64 tmp[(MAX_KEY_SIZE_IN_WORDS * MAX_XFRM_MULTIPLY) >> 1];
+  Uint32 tmp[MAX_KEY_SIZE_IN_WORDS * MAX_XFRM_MULTIPLY];
   void *buf = (void *)&tmp[0];
   DBUG_TRACE;
 
@@ -17969,7 +17975,7 @@ static MYSQL_SYSVAR_BOOL(
     log_bin,         /* name */
     opt_ndb_log_bin, /* var */
     PLUGIN_VAR_OPCMDARG,
-    "Log ndb tables in the binary log. Option only has meaning if "
+    "Log NDB tables in the binary log. Option only has meaning if "
     "the binary log has been turned on for the server.",
     nullptr, /* check func. */
     nullptr, /* update func. */

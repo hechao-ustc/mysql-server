@@ -32,6 +32,7 @@
 #include "ndbapi/NdbApi.hpp"
 #include "ndbapi/NdbInfo.hpp"
 #include "portlib/NdbDir.hpp"
+#include "util/Bitmask.hpp"
 #include "util/ndb_opts.h"
 #include "util/ndb_rand.h"
 #include "util/random.h"
@@ -42,21 +43,19 @@ extern "C" void _ndbjtie_exports(void);
 
 extern "C"
 #ifdef _MSC_VER
-/*
-  Make at least one symbol defined in ndbclient in order to force
-  generation of export lib 
-*/
-__declspec(dllexport)
+    /*
+      Make at least one symbol defined in ndbclient in order to force
+      generation of export lib
+    */
+    __declspec(dllexport)
 #endif
-void
-_ndbclient_exports(void)
-{
+        void _ndbclient_exports(void) {
   (void)ndb_init();
   Ndb_cluster_connection cluster_connection;
-  NdbScanFilter scan_filter((NdbOperation*)0);
+  NdbScanFilter scan_filter((NdbOperation *)0);
   NdbIndexStat index_stat;
   NdbInfo info(&cluster_connection, "");
-  drop_instance(); // NdbPool
+  drop_instance();  // NdbPool
 #ifdef NDB_WITH_NDBJTIE
   _ndbjtie_exports();
 #endif
@@ -64,6 +63,13 @@ _ndbclient_exports(void)
   myRandom48Init(0);
   ndb_rand();
   (void)NdbDir::chdir("");
-  (void)BitmaskImpl::setField(0, 0, 0, 37, (Uint32*)0);
+  /*
+   * The below calls will export symbols for BitmaskImpl::getFieldImpl and
+   * BitmaskImpl::setFieldImpl.
+   */
+  Uint32 d[2] = {218, 921};
+  const Uint32 s[2] = {9842, 27124};
+  (void)BitmaskImpl::setField(64, d, 0, 37, s);
+  (void)BitmaskImpl::getField(37, s, 0, 64, d);
   ndb_end(0);
 }

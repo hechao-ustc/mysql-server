@@ -365,6 +365,17 @@ bool Table_ref::resolve_derived(THD *thd, bool apply_semijoin) {
         if (sl->parent()->term_type() != QT_UNION) {
           my_error(ER_CTE_RECURSIVE_NOT_UNION, MYF(0));
           return true;
+        } else if (sl->parent()->parent() != nullptr) {
+          /*
+            Right-nested UNIONs with recursive query blocks are not allowed. It
+            is expected that all possible flattening of UNION blocks is done
+            beforehand. Any nested UNION indicates a mixing of UNION DISTINCT
+            and UNION ALL, which cannot be flattened further.
+          */
+          my_error(ER_NOT_SUPPORTED_YET, MYF(0),
+                   "right nested recursive query blocks, in "
+                   "Common Table Expression");
+          return true;
         }
         if (sl->is_ordered() || sl->has_limit() || sl->is_distinct()) {
           /*
@@ -677,6 +688,10 @@ Item *resolve_expression(THD *thd, Item *item, Query_block *query_block) {
                               << thd->lex->current_query_block()->nest_level;
 
   bool ret = item->fix_fields(thd, &item);
+  // For items with params, propagate the default data type.
+  if (item->data_type() == MYSQL_TYPE_INVALID &&
+      item->propagate_type(thd, item->default_data_type()))
+    return nullptr;
   // Restore original state back
   thd->want_privilege = save_old_privilege;
   thd->lex->set_current_query_block(saved_current_query_block);
@@ -1585,7 +1600,7 @@ bool Table_ref::optimize_derived(THD *thd) {
   // doesn't care about const tables, though, so it prefers to do this
   // at execution time (in fact, it will get confused and crash if it has
   // already been materialized).
-  if (!thd->lex->using_hypergraph_optimizer) {
+  if (!thd->lex->using_hypergraph_optimizer()) {
     if (materializable_is_const() &&
         (create_materialized_table(thd) || materialize_derived(thd)))
       return true;

@@ -26,7 +26,7 @@ ADD_WSHADOW_WARNING()
 
 # Lots of warnings about -Walloc-size-larger-than= from my_malloc.cc
 # but it is basically impossible to trace the actual origin.
-IF(FPROFILE_GENERATE OR FPROFILE_USE)
+IF(FPROFILE_GENERATE OR FPROFILE_USE OR CMAKE_COMPILER_FLAG_WITH_LTO)
   IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10)
     # -Walloc-size-larger-than=PTRDIFF_MAX is enabled by default.
     STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " -Wno-alloc-size-larger-than")
@@ -478,7 +478,9 @@ SET(SQL_SHARED_SOURCES
   persisted_variable.cc
   protocol_classic.cc
   psi_memory_key.cc
+  psi_memory_resource.cc
   query_result.cc
+  raii/targeted_stringstream.cc
   range_optimizer/geometry_index_range_scan.cc
   range_optimizer/group_index_skip_scan.cc
   range_optimizer/group_index_skip_scan_plan.cc
@@ -553,7 +555,6 @@ SET(SQL_SHARED_SOURCES
   sql_help.cc
   sql_import.cc
   sql_insert.cc
-  sql_join_buffer.cc
   sql_lex.cc
   sql_lex_hash.cc
   sql_lex_hints.cc
@@ -692,7 +693,7 @@ IF(WITH_LOCK_ORDER)
     )
 
   # Bison output uses undefined symbols for clang >= v15
-  IF(MY_COMPILER_IS_CLANG AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
+  IF(MY_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 14)
     ADD_COMPILE_FLAGS(${CMAKE_BINARY_DIR}/sql/debug_lo_parser.cc
                       COMPILE_FLAGS "-Wno-unused-but-set-variable")
   ENDIF()
@@ -887,13 +888,20 @@ IF(WIN32 AND NOT WIN32_CLANG)
     COMPILE_FLAGS "/d2OptimizeHugeFunctions")
 ENDIF()
 
+# 'yyexhtaustedlab': unreferenced label
+IF(WIN32 AND NOT WIN32_CLANG)
+  ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
+                    ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
+                    COMPILE_FLAGS "/wd4102")
+ENDIF()
+
 # Common for all versions of GCC/Clang
 # Bison output uses undefined symbols in #if checks
 IF(MY_COMPILER_IS_GNU_OR_CLANG)
   ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
                     ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
                     COMPILE_FLAGS "-Wno-undef -Wno-unused-label")
-  IF(MY_COMPILER_IS_CLANG AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
+  IF(MY_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 14)
     ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
                       ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
                       COMPILE_FLAGS "-Wno-unused-but-set-variable")
@@ -939,7 +947,7 @@ TARGET_LINK_LIBRARIES(sql_main ${MYSQLD_STATIC_PLUGIN_LIBS}
 # sql/immutable_string.h uses
 # google::protobuf::io::CodedOutputStream::WriteVarint64ToArray
 # which may or may not be inlined.
-TARGET_LINK_LIBRARIES(sql_main ${PROTOBUF_LITE_LIBRARY})
+TARGET_LINK_LIBRARIES(sql_main ext::libprotobuf-lite)
 
 ADD_LIBRARY(sql_gis STATIC ${SQL_GIS_SOURCES})
 ADD_DEPENDENCIES(sql_gis GenServerSource)
@@ -957,6 +965,8 @@ IF(COMPRESS_DEBUG_SECTIONS)
     TARGET_COMPILE_OPTIONS(sql_gis PRIVATE -gz)
   ENDIF()
 ENDIF()
+# Exclude sql_gis from PGO on Windows to avoid linker error LNK1248
+EXCLUDE_FROM_MSVC_PGO(sql_gis)
 
 ADD_LIBRARY(sql_dd STATIC ${DD_SOURCES})
 ADD_DEPENDENCIES(sql_dd GenFixPrivs)
@@ -993,7 +1003,7 @@ SET(BINLOG_SOURCE
   binlog/group_commit/atomic_bgc_ticket.cc
   binlog/group_commit/atomic_bgc_ticket_guard.cc
   binlog/monitoring/context.cc
-  binlog/tools/iterators.cc
+  binlog/decompressing_event_object_istream.cc
   binlog.cc
   binlog_istream.cc
   binlog_ostream.cc
@@ -1084,7 +1094,7 @@ SET (RPL_REPLICA_SRCS
 ADD_LIBRARY(rpl_replica STATIC ${RPL_REPLICA_SRCS})
 ADD_DEPENDENCIES(rpl_replica GenError)
 TARGET_LINK_LIBRARIES(rpl_replica
-  binlog sql_main ${PROTOBUF_LITE_LIBRARY} ${RPL_PROTOBUF_LITE_LIB})
+  binlog sql_main ext::libprotobuf-lite ${RPL_PROTOBUF_LITE_LIB})
 
 IF(WIN32)
   # Silence warnings about: needs to have dll-interface
@@ -1202,11 +1212,18 @@ IF(FPROFILE_GENERATE)
 ENDIF()
 
 IF(MSVC)
-  # Set module definition file.
-  SET_TARGET_PROPERTIES(mysqld
-    PROPERTIES LINK_FLAGS
+  ADD_DEPENDENCIES(sql_main GenError)
+  IF(MYSQLD_DEF_FILE)
+    # Set module definition file.
+    SET_TARGET_PROPERTIES(mysqld
+      PROPERTIES LINK_FLAGS
+        "${mysqld_link_flags} /DEF:${MYSQLD_DEF_FILE}")
+  ELSE()
+    # Set module definition file.
+    SET_TARGET_PROPERTIES(mysqld
+      PROPERTIES LINK_FLAGS
     "${mysqld_link_flags} /DEF:${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def")
-
+  ENDIF()
   SET(_PLATFORM  x64)
 
   MYSQL_ADD_EXECUTABLE(create_def create_def.cc SKIP_INSTALL)

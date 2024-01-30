@@ -331,6 +331,9 @@ class Item_func_random_bytes : public Item_str_func {
   String *val_str(String *a) override;
 
   const char *func_name() const override { return "random_bytes"; }
+  table_map get_initial_pseudo_tables() const override {
+    return RAND_TABLE_BIT;
+  }
 };
 
 class Item_func_concat : public Item_str_func {
@@ -646,7 +649,8 @@ class Item_func_user : public Item_func_sysconst {
         pointer_cast<Check_function_as_value_generator_parameters *>(
             checker_args);
     func_arg->banned_function_name = func_name();
-    return true;
+    return ((func_arg->source == VGS_GENERATED_COLUMN) ||
+            (func_arg->source == VGS_CHECK_CONSTRAINT));
   }
   bool resolve_type(THD *) override {
     set_data_type_string(uint32{USERNAME_CHAR_LENGTH + HOSTNAME_LENGTH + 1U});
@@ -719,13 +723,9 @@ class Item_func_make_set final : public Item_str_func {
 
   bool itemize(Parse_context *pc, Item **res) override;
   String *val_str(String *str) override;
-  bool fix_fields(THD *thd, Item **ref) override {
-    assert(fixed == 0);
-    bool res = ((!item->fixed && item->fix_fields(thd, &item)) ||
-                item->check_cols(1) || Item_func::fix_fields(thd, ref));
-    set_nullable(is_nullable() || item->is_nullable());
-    return res;
-  }
+  bool fix_fields(THD *thd, Item **ref) override;
+  void fix_after_pullout(Query_block *parent_query_block,
+                         Query_block *removed_query_block) override;
   void split_sum_func(THD *thd, Ref_item_array ref_item_array,
                       mem_root_deque<Item *> *fields) override;
   bool resolve_type(THD *) override;

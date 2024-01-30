@@ -470,7 +470,7 @@ void LEX::reset() {
   server_options.reset();
   explain_format = nullptr;
   is_explain_analyze = false;
-  using_hypergraph_optimizer = false;
+  set_using_hypergraph_optimizer(false);
   is_lex_started = true;
   reset_slave_info.all = false;
   mi.channel = nullptr;
@@ -1856,6 +1856,12 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
               my_isdigit(cs, (version_str[2] = lip->yyPeekn(2))) &&
               my_isdigit(cs, (version_str[3] = lip->yyPeekn(3))) &&
               my_isdigit(cs, (version_str[4] = lip->yyPeekn(4)))) {
+            if (!my_isspace(cs, lip->yyPeekn(5))) {
+              push_warning(thd, Sql_condition::SL_WARNING,
+                           ER_WARN_NO_SPACE_VERSION_COMMENT,
+                           ER_THD(thd, ER_WARN_NO_SPACE_VERSION_COMMENT));
+            }
+
             version_str[5] = 0;
             ulong version;
             version = strtol(version_str, nullptr, 10);
@@ -3861,7 +3867,9 @@ bool Query_expression::save_cmd_properties(THD *thd) {
   including binding data for all associated tables.
 */
 void Query_expression::restore_cmd_properties() {
-  for (auto qt : query_terms<>()) qt->query_block()->restore_cmd_properties();
+  for (auto qt : query_terms<>()) {
+    qt->query_block()->restore_cmd_properties();
+  }
 }
 
 /**
@@ -4824,6 +4832,12 @@ void Query_block::restore_cmd_properties() {
     Window *w;
     while ((w = li++)) w->reset_round();
   }
+  /*
+    Unconditionally update used table information for all items referenced from
+    query block. This is required in case const table substitution, or other
+    kind of optimization, has been performed in earlier rounds.
+  */
+  update_used_tables();
 }
 
 bool Query_options::merge(const Query_options &a, const Query_options &b) {

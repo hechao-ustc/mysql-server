@@ -27,6 +27,7 @@
 #include "my_dbug.h"
 #include "my_systime.h"
 #include "mysql/components/services/log_builtins.h"
+#include "plugin/group_replication/include/compatibility_module.h"
 #include "plugin/group_replication/include/plugin.h"
 #include "plugin/group_replication/include/plugin_psi.h"
 #include "plugin/group_replication/include/plugin_server_include.h"
@@ -241,10 +242,7 @@ int Recovery_state_transfer::update_recovery_process(bool did_members_left) {
     current_donor_uuid.assign(selected_donor->get_uuid());
     current_donor_hostname.assign(selected_donor->get_hostname());
     current_donor_port = selected_donor->get_port();
-    Group_member_info *current_donor =
-        group_member_mgr->get_group_member_info(current_donor_uuid);
-    donor_left = (current_donor == nullptr);
-    delete current_donor;
+    donor_left = !group_member_mgr->is_member_info_present(current_donor_uuid);
   }
 
   /*
@@ -324,6 +322,8 @@ bool Recovery_state_transfer::is_own_event_channel(my_thread_id id) {
 
 void Recovery_state_transfer::build_donor_list(string *selected_donor_uuid) {
   DBUG_TRACE;
+  const Member_version local_member_version =
+      local_member_info->get_member_version();
 
   suitable_donors.clear();
 
@@ -337,12 +337,18 @@ void Recovery_state_transfer::build_donor_list(string *selected_donor_uuid) {
         member->get_recovery_status() == Group_member_info::MEMBER_ONLINE;
     bool not_self = m_uuid.compare(member_uuid);
     bool valid_donor = false;
+    const Member_version member_version = member->get_member_version();
 
     if (is_online && not_self) {
-      if (member->get_member_version() <=
-          local_member_info->get_member_version()) {
+      if (member_version <= local_member_version) {
         suitable_donors.push_back(member);
         valid_donor = true;
+      } else if (Compatibility_module::is_version_8_0_lts(member_version) &&
+                 Compatibility_module::is_version_8_0_lts(
+                     local_member_version)) {
+        suitable_donors.push_back(member);
+        valid_donor = true;
+
       } else if (get_allow_local_lower_version_join()) {
         suitable_donors.push_back(member);
         valid_donor = true;

@@ -3036,7 +3036,8 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
   */
 
   bitmap_size = share->column_bitmap_size;
-  if (!(bitmaps = root->ArrayAlloc<uchar>(bitmap_size * 7))) goto err;
+  bitmaps = root->ArrayAlloc<uchar>(bitmap_size * 8);
+  if (bitmaps == nullptr) goto err;
   bitmap_init(&outparam->def_read_set, (my_bitmap_map *)bitmaps, share->fields);
   bitmap_init(&outparam->def_write_set,
               (my_bitmap_map *)(bitmaps + bitmap_size), share->fields);
@@ -3050,6 +3051,9 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
               (my_bitmap_map *)(bitmaps + bitmap_size * 5), share->fields);
   bitmap_init(&outparam->pack_row_tmp_set,
               (my_bitmap_map *)(bitmaps + bitmap_size * 6), share->fields);
+  bitmap_init(&outparam->read_set_internal,
+              pointer_cast<my_bitmap_map *>(bitmaps + bitmap_size * 7),
+              share->fields);
   outparam->default_column_bitmaps();
 
   /*
@@ -4156,6 +4160,7 @@ void TABLE::reset() {
   set_keyread(false);
   no_keyread = false;
   all_partitions_pruned_away = false;
+  reginfo.join_tab = nullptr;
   reginfo.not_exists_optimize = false;
   reginfo.impossible_range = false;
   m_record_buffer = Record_buffer{0, 0, nullptr};
@@ -4394,6 +4399,17 @@ void Table_ref::reset() {
   }
 }
 
+/// Save the contents of the "from" bitmap in "to".
+static bool save_bitmap(MEM_ROOT *mem_root, const MY_BITMAP &from,
+                        MY_BITMAP *to) {
+  my_bitmap_map *buffer = static_cast<my_bitmap_map *>(
+      mem_root->Alloc(bitmap_buffer_size(from.n_bits)));
+  if (buffer == nullptr) return true;
+  if (bitmap_init(to, buffer, from.n_bits)) return true;
+  bitmap_copy(to, &from);
+  return false;
+}
+
 /**
   Save persistent properties from TABLE into Table_ref.
   Required because some properties about a table are calculated inside TABLE
@@ -4405,22 +4421,13 @@ void Table_ref::reset() {
   @returns false if success, true if error
 */
 bool Table_ref::save_properties() {
-  size_t size = bitmap_buffer_size(table->s->fields);
-  my_bitmap_map *read_map, *write_map;
-  if (table->s->fields <= 64) {
-    read_map = read_set_small;
-    write_map = write_set_small;
-  } else {
-    read_map = static_cast<my_bitmap_map *>(current_thd->mem_root->Alloc(size));
-    if (read_map == nullptr) return true;
-    write_map =
-        static_cast<my_bitmap_map *>(current_thd->mem_root->Alloc(size));
-    if (write_map == nullptr) return true;
+  MEM_ROOT *const mem_root = *THR_MALLOC;
+  if (save_bitmap(mem_root, *table->read_set, &read_set_saved) ||
+      save_bitmap(mem_root, *table->write_set, &write_set_saved) ||
+      save_bitmap(mem_root, table->read_set_internal,
+                  &read_set_internal_saved)) {
+    return true;
   }
-  bitmap_init(&read_set_saved, read_map, table->s->fields);
-  bitmap_init(&write_set_saved, write_map, table->s->fields);
-  bitmap_copy(&read_set_saved, table->read_set);
-  bitmap_copy(&write_set_saved, table->write_set);
   covering_keys_saved = table->covering_keys;
   merge_keys_saved = table->merge_keys;
   keys_in_use_for_query_saved = table->keys_in_use_for_query;
@@ -4432,13 +4439,9 @@ bool Table_ref::save_properties() {
   force_index_group_saved = table->force_index_group;
   partition_info *const part = table->part_info;
   if (part != nullptr) {
-    const uint part_count = part->read_partitions.n_bits;
-    size = bitmap_buffer_size(part_count);
-    my_bitmap_map *lock_part_map =
-        static_cast<my_bitmap_map *>(current_thd->mem_root->Alloc(size));
-    if (lock_part_map == nullptr) return true;
-    bitmap_init(&lock_partitions_saved, lock_part_map, part_count);
-    bitmap_copy(&lock_partitions_saved, &part->lock_partitions);
+    if (save_bitmap(mem_root, part->lock_partitions, &lock_partitions_saved)) {
+      return true;
+    }
   }
   return false;
 }
@@ -4454,6 +4457,7 @@ void Table_ref::restore_properties() {
   if (read_set_saved.bitmap == nullptr) return;
   bitmap_copy(table->read_set, &read_set_saved);
   bitmap_copy(table->write_set, &write_set_saved);
+  bitmap_copy(&table->read_set_internal, &read_set_internal_saved);
   table->covering_keys = covering_keys_saved;
   table->merge_keys = merge_keys_saved;
   table->keys_in_use_for_query = keys_in_use_for_query_saved;
@@ -5371,6 +5375,7 @@ void TABLE::clear_column_bitmaps() {
 
   bitmap_clear_all(&tmp_set);
   bitmap_clear_all(&cond_set);
+  bitmap_clear_all(&read_set_internal);
 
   if (m_partial_update_columns != nullptr)
     bitmap_clear_all(m_partial_update_columns);
@@ -5424,6 +5429,7 @@ void TABLE::mark_column_used(Field *field, enum enum_mark_columns mark) {
     case MARK_COLUMNS_READ: {
       Key_map part_of_key = field->part_of_key;
       bitmap_set_bit(read_set, field->field_index());
+      bitmap_set_bit(&read_set_internal, field->field_index());
 
       part_of_key.merge(field->part_of_prefixkey);
       covering_keys.intersect(part_of_key);
@@ -6555,12 +6561,11 @@ int Table_ref::fetch_number_of_rows(ha_rows fallback_estimate) {
                  // Recursive reference is never a const table
                  fallback_estimate);
   } else {
-    if (const int error =
-            table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
-        error) {
+    int error = table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
+    DBUG_EXECUTE_IF("bug35208539_raise_error", error = HA_ERR_GENERIC;);
+    if (error) {
       return error;
     }
-
     // Some information schema tables have zero as estimate, which can lead
     // to completely wild plans. Add a placeholder to make sure we have
     // _something_ to work with.
@@ -7263,6 +7268,13 @@ void TABLE::column_bitmaps_set(MY_BITMAP *read_set_arg,
   if (file && created) file->column_bitmaps_signal();
 }
 
+handler *TABLE::get_primary_handler() const {
+  if (s->is_primary_engine()) {
+    return file;
+  }
+  return file->ha_get_primary_handler();
+}
+
 bool Table_ref::set_recursive_reference() {
   if (query_block->recursive_reference != nullptr) return true;
   query_block->recursive_reference = this;
@@ -7278,6 +7290,18 @@ bool Table_ref::is_derived_unfinished_materialization() const {
 uint Table_ref::get_hidden_field_count_for_derived() const {
   assert(is_view_or_derived());
   return derived_result->get_hidden_field_count();
+}
+
+bool Table_ref::is_external() const {
+  if (m_table_ref_type == TABLE_REF_BASE_TABLE && table != nullptr &&
+      table->file != nullptr) {
+    handler *primary_handler = table->get_primary_handler();
+    return primary_handler != nullptr &&
+           Overlaps(primary_handler->ht->flags,
+                    HTON_SUPPORTS_EXTERNAL_SOURCE) &&
+           primary_handler->get_table_share()->has_secondary_engine();
+  }
+  return false;
 }
 
 void LEX_MFA::copy(LEX_MFA *m, MEM_ROOT *alloc) {

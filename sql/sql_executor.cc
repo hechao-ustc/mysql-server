@@ -54,6 +54,7 @@
 #include "my_byteorder.h"
 #include "my_checksum.h"
 #include "my_dbug.h"
+#include "my_hash_combine.h"
 #include "my_loglevel.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
@@ -327,9 +328,9 @@ bool has_rollup_result(Item *item) {
   return false;
 }
 
-bool is_rollup_group_wrapper(Item *item) {
+bool is_rollup_group_wrapper(const Item *item) {
   return item->type() == Item::FUNC_ITEM &&
-         down_cast<Item_func *>(item)->functype() ==
+         down_cast<const Item_func *>(item)->functype() ==
              Item_func::ROLLUP_GROUP_ITEM_FUNC;
 }
 
@@ -1521,6 +1522,10 @@ static void RecalculateTablePathCost(AccessPath *path,
       EstimateMaterializeCost(current_thd, path);
       break;
 
+    case AccessPath::WINDOW:
+      EstimateWindowCost(path);
+      break;
+
     default:
       assert(false);
   }
@@ -1547,6 +1552,7 @@ AccessPath *MoveCompositeIteratorsFromTablePath(
       case AccessPath::CONST_TABLE:
       case AccessPath::INDEX_SCAN:
       case AccessPath::INDEX_RANGE_SCAN:
+      case AccessPath::DYNAMIC_INDEX_RANGE_SCAN:
         // We found our real bottom.
         path->materialize().table_path = sub_path;
         if (explain) {
@@ -1607,6 +1613,9 @@ AccessPath *MoveCompositeIteratorsFromTablePath(
         bottom_of_table_path->materialize()
             .param->query_blocks[0]
             .subquery_path = path;
+        break;
+      case AccessPath::WINDOW:
+        bottom_of_table_path->window().child = path;
         break;
       default:
         assert(false);
@@ -3306,7 +3315,7 @@ AccessPath *JOIN::attach_access_paths_for_having_and_limit(AccessPath *path) {
     AccessPath *old_path = path;
     path = NewFilterAccessPath(thd, path, having_cond);
     CopyBasicProperties(*old_path, path);
-    if (thd->lex->using_hypergraph_optimizer) {
+    if (thd->lex->using_hypergraph_optimizer()) {
       // We cannot call EstimateFilterCost() in the pre-hypergraph optimizer,
       // as on repeated execution of a prepared query, the condition may contain
       // references to subqueries that are destroyed and not re-optimized yet.
@@ -3930,8 +3939,8 @@ static bool table_rec_cmp(TABLE *table) {
 */
 
 ulonglong unique_hash(const Field *field, ulonglong *hash_val) {
-  uint64 seed1 = 0, seed2 = 4;
-  ulonglong crc = *hash_val;
+  uint64_t seed1 = 0, seed2 = 4;
+  uint64_t crc = *hash_val;
 
   if (field->is_null()) {
     /*
@@ -3957,7 +3966,7 @@ ulonglong unique_hash(const Field *field, ulonglong *hash_val) {
     }
     field->charset()->coll->hash_sort(field->charset(), data_ptr,
                                       field->data_length(), &seed1, &seed2);
-    crc ^= seed1;
+    my_hash_combine(crc, seed1);
   } else {
     const uchar *pos = field->data_ptr();
     const uchar *end = pos + field->data_length();
@@ -4323,8 +4332,13 @@ static Item_rollup_group_item *find_rollup_item_in_group_list(
   for (ORDER *group = query_block->group_list.first; group;
        group = group->next) {
     Item_rollup_group_item *rollup_item = group->rollup_item;
-    if (item->eq(rollup_item, /*binary_cmp=*/false)) {
-      return rollup_item;
+    // If we have duplicate fields in group by
+    // (E.g. GROUP BY f1,f1,f2), rollup_item is set only for
+    // the first field.
+    if (rollup_item != nullptr) {
+      if (item->eq(rollup_item, /*binary_cmp=*/false)) {
+        return rollup_item;
+      }
     }
   }
   return nullptr;

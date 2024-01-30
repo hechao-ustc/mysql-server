@@ -26,8 +26,8 @@
 #define DnsCache_H
 
 #include <string>
-#include <unordered_set>
 #include <unordered_map>
+#include <unordered_set>
 
 /*
   Local DNS cache used to speed up subsequent DNS lookups where same hostname is
@@ -39,25 +39,26 @@
   allowed.
 */
 
-struct in6_addr;
+class ndb_sockaddr;
 
 class LocalDnsCache {
-public:
+ public:
   ~LocalDnsCache();
 
-  int getAddress(in6_addr * result, const char *hostname);
-protected:
-  /* no heap allocation */
-  static void * operator new(std::size_t) = delete;
-  static void * operator new[](std::size_t) = delete;
+  int getAddress(ndb_sockaddr *result, const char *hostname);
 
-private:
+ protected:
+  /* no heap allocation */
+  static void *operator new(std::size_t) = delete;
+  static void *operator new[](std::size_t) = delete;
+
+ private:
   // Negative cache of DNS misses
   std::unordered_set<std::string> m_failed_lookups;
   // Positive cache of DNS lookups
-  std::unordered_map<std::string, in6_addr*> m_resolver_cache;
+  std::unordered_map<std::string, ndb_sockaddr *> m_resolver_cache;
 
-  bool getCachedOrResolveAddress(in6_addr* result, const char* hostname);
+  bool getCachedOrResolveAddress(ndb_sockaddr *result, const char *hostname);
 };
 
 #endif

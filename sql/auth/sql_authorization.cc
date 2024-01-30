@@ -1032,7 +1032,7 @@ void make_database_privilege_statement(THD *thd, ACL_USER *role,
   };
   auto make_partial_db_revoke_stmts = [thd, protocol,
                                        restrictions](ACL_USER *acl_user) {
-    if (mysqld_partial_revokes()) {
+    if (mysqld_partial_revokes() && !restrictions.is_empty()) {
       /*
        Copy the unordered restrictions into an array.
        Send the sorted partial revokes to the client.
@@ -7444,7 +7444,7 @@ bool operator==(const Role_id &a, const Auth_id_ref &b) {
 
 bool operator==(const Auth_id_ref &a, const Role_id &b) { return b == a; }
 
-bool operator==(const std::pair<const Role_id, const Role_id> &a,
+bool operator==(const std::pair<const Role_id, Role_id> &a,
                 const Auth_id_ref &b) {
   return ((a.second.user().length() == b.first.length) &&
           (a.second.host().length() == b.second.length) &&

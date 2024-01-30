@@ -30,6 +30,7 @@
 #include "mysql/harness/stdx/expected.h"
 #include "mysql/harness/tls_error.h"
 #include "mysqld_error.h"  // mysql-server error-codes
+#include "mysqlrouter/classic_protocol_codec_error.h"
 
 stdx::expected<Processor::Result, std::error_code>
 StmtExecuteForwarder::process() {
@@ -69,7 +70,32 @@ StmtExecuteForwarder::command() {
     auto msg_res = ClassicFrame::recv_msg<
         classic_protocol::borrowed::message::client::StmtExecute>(src_channel,
                                                                   src_protocol);
-    if (!msg_res) return recv_client_failed(msg_res.error());
+    if (!msg_res) {
+      auto ec = msg_res.error();
+
+      // parse errors are invalid input.
+      if (ec.category() ==
+          make_error_code(classic_protocol::codec_errc::invalid_input)
+              .category()) {
+        auto send_res =
+            ClassicFrame::send_msg<classic_protocol::message::server::Error>(
+                src_channel, src_protocol,
+                {ER_MALFORMED_PACKET, "Malformed packet", "HY000"});
+        if (!send_res) return send_client_failed(send_res.error());
+
+        const auto &recv_buf = src_channel->recv_plain_view();
+
+        tr.trace(Tracer::Event().stage("stmt_execute::command:\n" +
+                                       mysql_harness::hexify(recv_buf)));
+
+        discard_current_msg(src_channel, src_protocol);
+
+        stage(Stage::Done);
+        return Result::SendToClient;
+      }
+
+      return recv_client_failed(msg_res.error());
+    }
 
     const auto &recv_buf = src_channel->recv_plain_view();
 
@@ -128,7 +154,9 @@ StmtExecuteForwarder::response() {
 
   auto read_res =
       ClassicFrame::ensure_has_msg_prefix(src_channel, src_protocol);
-  if (!read_res) return recv_server_failed(read_res.error());
+  if (!read_res) {
+    return recv_server_failed_and_check_client_socket(read_res.error());
+  }
 
   const uint8_t msg_type = src_protocol->current_msg_type().value();
 
@@ -238,8 +266,9 @@ stdx::expected<Processor::Result, std::error_code> StmtExecuteForwarder::row() {
 stdx::expected<Processor::Result, std::error_code>
 StmtExecuteForwarder::end_of_rows() {
   auto *socket_splicer = connection()->socket_splicer();
-  auto src_channel = socket_splicer->server_channel();
-  auto src_protocol = connection()->server_protocol();
+  auto *src_channel = socket_splicer->server_channel();
+  auto *src_protocol = connection()->server_protocol();
+  auto *dst_protocol = connection()->client_protocol();
 
   auto msg_res =
       ClassicFrame::recv_msg<classic_protocol::borrowed::message::server::Eof>(
@@ -259,13 +288,29 @@ StmtExecuteForwarder::end_of_rows() {
     stage(Stage::Done);
   }
 
+  dst_protocol->status_flags(msg.status_flags());
+
   return forward_server_to_client();
 }
 
 stdx::expected<Processor::Result, std::error_code> StmtExecuteForwarder::ok() {
+  auto *socket_splicer = connection()->socket_splicer();
+  auto *src_channel = socket_splicer->server_channel();
+  auto *src_protocol = connection()->server_protocol();
+  auto *dst_protocol = connection()->client_protocol();
+
+  auto msg_res =
+      ClassicFrame::recv_msg<classic_protocol::borrowed::message::server::Ok>(
+          src_channel, src_protocol);
+  if (!msg_res) return recv_server_failed(msg_res.error());
+
   if (auto &tr = tracer()) {
     tr.trace(Tracer::Event().stage("stmt_execute::ok"));
   }
+
+  auto msg = *msg_res;
+
+  dst_protocol->status_flags(msg.status_flags());
 
   stage(Stage::Done);
 

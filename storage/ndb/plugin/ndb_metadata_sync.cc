@@ -442,7 +442,6 @@ void Ndb_metadata_sync::reset_excluded_objects_state() {
 }
 
 void Ndb_metadata_sync::validate_excluded_objects(THD *thd) {
-  ndb_log_info("Validating excluded objects");
   /*
     The validation is done by the change monitor thread at the beginning of
     each detection cycle. There's a possibility that the binlog thread is
@@ -913,8 +912,8 @@ bool Ndb_metadata_sync::sync_table(THD *thd, const std::string &schema_name,
                  table_name.c_str());
 
     // Invalidate the table in NdbApi
-    Ndb_table_guard ndbtab_guard(ndb, schema_name.c_str(), table_name.c_str());
-    ndbtab_guard.invalidate();
+    Ndb_table_guard::invalidate_table(ndb, schema_name.c_str(),
+                                      table_name.c_str());
     return true;
   }
 

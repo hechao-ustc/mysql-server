@@ -41,6 +41,7 @@
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "prealloced_array.h"  // Prealloced_array
+#include "scope_guard.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // check_table_access
 #include "sql/binlog.h"            // mysql_bin_log
@@ -301,6 +302,83 @@ class SP_instr_error_handler : public Internal_error_handler {
   bool cts_table_exists_error = false;
 };
 
+/**
+  Execute an expression (e.g an IF) that is not a complete SQL statement.
+
+  Expressions that may be executed in this function:
+    IF, CASE, DECLARE, SET, RETURN
+
+  @param      thd    thread context
+  @param[out] nextp  next instruction pointer
+
+  @returns false if success, true if error
+*/
+bool sp_lex_instr::execute_expression(THD *thd, uint *nextp) {
+  auto execute_guard = create_scope_guard([&]() {
+    m_lex->cleanup(true);
+    if (thd->in_sub_stmt == 0) {
+      thd->get_stmt_da()->set_overwrite_status(true);
+      thd->is_error() ? trans_rollback_stmt(thd) : trans_commit_stmt(thd);
+      thd->get_stmt_da()->set_overwrite_status(false);
+    }
+    thd_proc_info(thd, "closing tables");
+    close_thread_tables(thd);
+    thd_proc_info(thd, nullptr);
+
+    if (thd->in_sub_stmt == 0) {
+      if (thd->transaction_rollback_request) {
+        trans_rollback_implicit(thd);
+        thd->mdl_context.release_transactional_locks();
+      } else if (!thd->in_multi_stmt_transaction_mode()) {
+        thd->mdl_context.release_transactional_locks();
+      } else {
+        thd->mdl_context.release_statement_locks();
+      }
+    }
+  });
+
+  /*
+    Check privileges for tables in expression, open and lock those tables,
+    bind data to expression so that it is ready for execution.
+
+    Notice that temporary tables must be opened before privilege checking.
+    This is because a session has all privileges for any temporary table that
+    it has created, however a table must be opened in order to identify it as
+    a temporary table.
+  */
+  if (m_lex->query_tables != nullptr) {
+    if (open_temporary_tables(thd, m_lex->query_tables)) {
+      return true;
+    }
+    if (check_table_access(thd, SELECT_ACL, m_lex->query_tables, false,
+                           UINT_MAX, false)) {
+      return true;
+    }
+  }
+  if (open_and_lock_tables(thd, m_lex->query_tables, 0)) {
+    return true;
+  }
+
+  if (m_arena.get_state() != Query_arena::STMT_INITIALIZED_FOR_SP) {
+    m_lex->restore_cmd_properties();
+    bind_fields(m_arena.item_list());
+  }
+  /*
+    Trace the expression. This is not an SQL statement, but pretend it is
+    a SELECT query expression.
+  */
+  Opt_trace_start ots(thd, m_lex->query_tables, SQLCOM_SELECT, &m_lex->var_list,
+                      nullptr, 0, this, thd->variables.character_set_client);
+  const Opt_trace_object trace_command(&thd->opt_trace);
+  const Opt_trace_array trace_command_steps(&thd->opt_trace, "steps");
+
+  if (exec_core(thd, nextp)) {
+    return true;
+  }
+
+  return false;
+}
+
 bool sp_lex_instr::reset_lex_and_exec_core(THD *thd, uint *nextp,
                                            bool open_tables) {
   /*
@@ -376,66 +454,8 @@ bool sp_lex_instr::reset_lex_and_exec_core(THD *thd, uint *nextp,
 
   if (!error) {
     if (open_tables) {
-      // todo: break this block out into a separate function.
-      /*
-        IF, CASE, DECLARE, SET, RETURN, have 'open_tables' true; they may
-        have a subquery in parameter and are worth tracing. They don't
-        correspond to a SQL command so we pretend that they are SQLCOM_SELECT.
-      */
-      Opt_trace_start ots(thd, m_lex->query_tables, SQLCOM_SELECT,
-                          &m_lex->var_list, nullptr, 0, this,
-                          thd->variables.character_set_client);
-      Opt_trace_object trace_command(&thd->opt_trace);
-      Opt_trace_array trace_command_steps(&thd->opt_trace, "steps");
-
-      /*
-        Check whenever we have access to tables for this statement
-        and open and lock them before executing instructions core function.
-        If we are not opening any tables, we don't need to check permissions
-        either.
-      */
-      if (m_lex->query_tables)
-        error = (open_temporary_tables(thd, m_lex->query_tables) ||
-                 check_table_access(thd, SELECT_ACL, m_lex->query_tables, false,
-                                    UINT_MAX, false));
-
-      if (!error) error = open_and_lock_tables(thd, m_lex->query_tables, 0);
-
-      if (!error) {
-        m_lex->restore_cmd_properties();
-        bind_fields(m_arena.item_list());
-
-        error = exec_core(thd, nextp);
-        DBUG_PRINT("info", ("exec_core returned: %d", error));
-      }
-
-      /*
-        Call after unit->cleanup() to close open table
-        key read.
-      */
-
-      m_lex->cleanup(true);
-
-      /* Here we also commit or rollback the current statement. */
-
-      if (!thd->in_sub_stmt) {
-        thd->get_stmt_da()->set_overwrite_status(true);
-        thd->is_error() ? trans_rollback_stmt(thd) : trans_commit_stmt(thd);
-        thd->get_stmt_da()->set_overwrite_status(false);
-      }
-      thd_proc_info(thd, "closing tables");
-      close_thread_tables(thd);
-      thd_proc_info(thd, nullptr);
-
-      if (!thd->in_sub_stmt) {
-        if (thd->transaction_rollback_request) {
-          trans_rollback_implicit(thd);
-          thd->mdl_context.release_transactional_locks();
-        } else if (!thd->in_multi_stmt_transaction_mode())
-          thd->mdl_context.release_transactional_locks();
-        else
-          thd->mdl_context.release_statement_locks();
-      }
+      error = execute_expression(thd, nextp);
+      DBUG_PRINT("info", ("exec_expression returned: %d", error));
     } else {
       DEBUG_SYNC(thd, "sp_lex_instr_before_exec_core");
       error = exec_core(thd, nextp);
@@ -742,13 +762,6 @@ bool sp_lex_instr::validate_lex_and_execute_core(THD *thd, uint *nextp,
     */
     if (stmt_reprepare_observer == nullptr || thd->is_fatal_error() ||
         thd->killed || thd->get_stmt_da()->mysql_errno() != ER_NEED_REPREPARE) {
-      /*
-        If an error occurred before execution, make sure next execution is
-        started with a clean statement:
-      */
-      if (m_lex->is_metadata_used() && !m_lex->is_exec_started()) {
-        invalidate();
-      }
       return true;
     }
     /*
@@ -828,7 +841,8 @@ void sp_lex_instr::get_query(String *sql_query) const {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_stmt::psi_info = {0, "stmt", 0, PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_stmt::psi_info = {0, "stmt", 0,
+                                              "Stored Program: SQL statement"};
 #endif
 
 bool sp_instr_stmt::execute(THD *thd, uint *nextp) {
@@ -984,7 +998,9 @@ bool sp_instr_stmt::exec_core(THD *thd, uint *nextp) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_set::psi_info = {0, "set", 0, PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_set::psi_info = {
+    0, "set", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: SET statement"};
 #endif
 
 bool sp_instr_set::exec_core(THD *thd, uint *nextp) {
@@ -1027,7 +1043,8 @@ void sp_instr_set::print(const THD *thd, String *str) {
 
 #ifdef HAVE_PSI_INTERFACE
 PSI_statement_info sp_instr_set_trigger_field::psi_info = {
-    0, "set_trigger_field", 0, PSI_DOCUMENT_ME};
+    0, "set_trigger_field", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: SET NEW.<field> in TRIGGER"};
 #endif
 
 bool sp_instr_set_trigger_field::exec_core(THD *thd, uint *nextp) {
@@ -1087,7 +1104,9 @@ void sp_instr_set_trigger_field::cleanup_before_parsing(THD *thd) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_jump::psi_info = {0, "jump", 0, PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_jump::psi_info = {
+    0, "jump", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: jump microcode instruction"};
 #endif
 
 void sp_instr_jump::print(const THD *, String *str) {
@@ -1133,8 +1152,9 @@ void sp_instr_jump::opt_move(uint dst, List<sp_branch_instr> *bp) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_jump_if_not::psi_info = {0, "jump_if_not", 0,
-                                                     PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_jump_if_not::psi_info = {
+    0, "jump_if_not", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: jump if false microcode instruction"};
 #endif
 
 bool sp_instr_jump_if_not::exec_core(THD *thd, uint *nextp) {
@@ -1215,8 +1235,9 @@ void sp_lex_branch_instr::opt_move(uint dst, List<sp_branch_instr> *bp) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_jump_case_when::psi_info = {0, "jump_case_when", 0,
-                                                        PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_jump_case_when::psi_info = {
+    0, "jump_case_when", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: jump CASE WHEN microcode instruction"};
 #endif
 
 bool sp_instr_jump_case_when::exec_core(THD *thd, uint *nextp) {
@@ -1286,8 +1307,9 @@ bool sp_instr_jump_case_when::on_after_expr_parsing(THD *thd) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_freturn::psi_info = {0, "freturn", 0,
-                                                 PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_freturn::psi_info = {
+    0, "freturn", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: RETURN from STORED FUNCTION"};
 #endif
 
 bool sp_instr_freturn::exec_core(THD *thd, uint *nextp) {
@@ -1324,8 +1346,9 @@ void sp_instr_freturn::print(const THD *thd, String *str) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_hpush_jump::psi_info = {0, "hpush_jump", 0,
-                                                    PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_hpush_jump::psi_info = {
+    0, "hpush_jump", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: install a DECLARE HANDLER microcode instruction"};
 #endif
 
 sp_instr_hpush_jump::sp_instr_hpush_jump(uint ip, sp_pcontext *ctx,
@@ -1399,7 +1422,9 @@ uint sp_instr_hpush_jump::opt_mark(sp_head *sp, List<sp_instr> *leads) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_hpop::psi_info = {0, "hpop", 0, PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_hpop::psi_info = {
+    0, "hpop", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: uninstall a DECLARE HANDLER microcode instruction"};
 #endif
 
 bool sp_instr_hpop::execute(THD *thd, uint *nextp) {
@@ -1413,8 +1438,9 @@ bool sp_instr_hpop::execute(THD *thd, uint *nextp) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_hreturn::psi_info = {0, "hreturn", 0,
-                                                 PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_hreturn::psi_info = {
+    0, "hreturn", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: return from a DECLARE HANDLER microcode instruction"};
 #endif
 
 sp_instr_hreturn::sp_instr_hreturn(uint ip, sp_pcontext *ctx)
@@ -1477,7 +1503,9 @@ uint sp_instr_hreturn::opt_mark(sp_head *, List<sp_instr> *) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_cpush::psi_info = {0, "cpush", 0, PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_cpush::psi_info = {
+    0, "cpush", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: install a DECLARE CURSOR microcode instruction"};
 #endif
 
 bool sp_instr_cpush::execute(THD *thd, uint *nextp) {
@@ -1520,7 +1548,9 @@ void sp_instr_cpush::print(const THD *, String *str) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_cpop::psi_info = {0, "cpop", 0, PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_cpop::psi_info = {
+    0, "cpop", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: uninstall a DECLARE CURSOR microcode instruction"};
 #endif
 
 bool sp_instr_cpop::execute(THD *thd, uint *nextp) {
@@ -1542,7 +1572,9 @@ void sp_instr_cpop::print(const THD *, String *str) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_copen::psi_info = {0, "copen", 0, PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_copen::psi_info = {
+    0, "copen", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: OPEN cursor"};
 #endif
 
 bool sp_instr_copen::execute(THD *thd, uint *nextp) {
@@ -1607,8 +1639,9 @@ void sp_instr_copen::print(const THD *, String *str) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_cclose::psi_info = {0, "cclose", 0,
-                                                PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_cclose::psi_info = {
+    0, "cclose", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: CLOSE cursor"};
 #endif
 
 bool sp_instr_cclose::execute(THD *thd, uint *nextp) {
@@ -1643,8 +1676,9 @@ void sp_instr_cclose::print(const THD *, String *str) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_cfetch::psi_info = {0, "cfetch", 0,
-                                                PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_cfetch::psi_info = {
+    0, "cfetch", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: FETCH cursor"};
 #endif
 
 bool sp_instr_cfetch::execute(THD *thd, uint *nextp) {
@@ -1688,7 +1722,9 @@ void sp_instr_cfetch::print(const THD *, String *str) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_error::psi_info = {0, "error", 0, PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_error::psi_info = {
+    0, "error", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: CASE WHEN not found microcode instruction"};
 #endif
 
 void sp_instr_error::print(const THD *, String *str) {
@@ -1703,8 +1739,9 @@ void sp_instr_error::print(const THD *, String *str) {
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_set_case_expr::psi_info = {0, "set_case_expr", 0,
-                                                       PSI_DOCUMENT_ME};
+PSI_statement_info sp_instr_set_case_expr::psi_info = {
+    0, "set_case_expr", PSI_FLAG_DISABLED | PSI_FLAG_UNTIMED,
+    "Stored Program: CASE microcode instruction"};
 #endif
 
 bool sp_instr_set_case_expr::exec_core(THD *thd, uint *nextp) {

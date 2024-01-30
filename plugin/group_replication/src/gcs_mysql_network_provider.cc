@@ -82,7 +82,11 @@ int Gcs_mysql_network_provider_native_interface_impl::mysql_options(
 bool Gcs_mysql_network_provider_native_interface_impl::mysql_ssl_set(
     MYSQL *mysql, const char *key, const char *cert, const char *ca,
     const char *capath, const char *cipher) {
-  return ::mysql_ssl_set(mysql, key, cert, ca, capath, cipher);
+  return ::mysql_options(mysql, MYSQL_OPT_SSL_KEY, key) +
+         ::mysql_options(mysql, MYSQL_OPT_SSL_CERT, cert) +
+         ::mysql_options(mysql, MYSQL_OPT_SSL_CA, ca) +
+         ::mysql_options(mysql, MYSQL_OPT_SSL_CAPATH, capath) +
+         ::mysql_options(mysql, MYSQL_OPT_SSL_CIPHER, cipher);
 }
 
 int Gcs_mysql_network_provider_native_interface_impl::
@@ -179,12 +183,10 @@ bool Gcs_mysql_network_provider::configure_secure_connections(
   return false;
 }
 
-bool Gcs_mysql_network_provider::cleanup_secure_connections_context() {
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-  ERR_remove_thread_state(0);
-#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
-
-  return false;
+void Gcs_mysql_network_provider::cleanup_secure_connections_context() {
+  auto secure_connections_context_cleaner =
+      this->get_secure_connections_context_cleaner();
+  std::invoke(secure_connections_context_cleaner);
 }
 
 bool Gcs_mysql_network_provider::finalize_secure_connections_context() {

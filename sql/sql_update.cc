@@ -1200,7 +1200,7 @@ static TABLE *GetOutermostTable(const JOIN *join) {
   // The old optimizer can usually find it in the access path too, except if the
   // outermost table is a const table, since const tables may not be visible in
   // the access path tree.
-  if (!join->thd->lex->using_hypergraph_optimizer) {
+  if (!join->thd->lex->using_hypergraph_optimizer()) {
     assert(join->qep_tab != nullptr);
     return join->qep_tab[0].table();
   }
@@ -1545,7 +1545,7 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
   // enables it to perform optimizations like sort avoidance and semi-join
   // flattening even if features specific to single-table UPDATE (that is, ORDER
   // BY and LIMIT) are used.
-  if (lex->using_hypergraph_optimizer) {
+  if (lex->using_hypergraph_optimizer()) {
     multitable = true;
   }
 
@@ -1748,10 +1748,11 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
   /* @todo: downgrade the metadata locks here. */
 
   /*
-    Syntax rule for multi-table update prevents these constructs.
-    But they are possible for single-table UPDATE against multi-table view.
+    ORDER BY and LIMIT is only allowed for single table update, so check. Even
+    through it looks syntactically like a single table update, it may still be
+    a multi-table update hidden if we update a multi-table view.
   */
-  if (is_single_table_syntax && table_list->is_multiple_tables()) {
+  if (!is_single_table_syntax || table_list->is_multiple_tables()) {
     if (select->order_list.elements) {
       my_error(ER_WRONG_USAGE, MYF(0), "UPDATE", "ORDER BY");
       return true;
@@ -2997,7 +2998,7 @@ table_map GetImmediateUpdateTable(const JOIN *join, bool single_target) {
 
   // The hypergraph optimizer determines the immediate update tables during
   // planning, not after planning.
-  assert(!join->thd->lex->using_hypergraph_optimizer);
+  assert(!join->thd->lex->using_hypergraph_optimizer());
 
   // In some cases, rows may be updated immediately as they are read from the
   // outermost table in the join.
@@ -3070,7 +3071,7 @@ unique_ptr_destroy_only<RowIterator> Query_result_update::create_iterator(
       update_tables, tmp_tables, copy_field, unupdated_check_opt_tables,
       update_operations, fields_for_table, values_for_table,
       // The old optimizer does not use hash join in UPDATE statements.
-      thd->lex->using_hypergraph_optimizer
+      thd->lex->using_hypergraph_optimizer()
           ? GetHashJoinTables(unit->root_access_path())
           : 0);
 }

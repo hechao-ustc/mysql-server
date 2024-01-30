@@ -227,6 +227,10 @@ void MysqlRoutingClassicConnectionBase::async_send_client(Function next) {
   auto socket_splicer = this->socket_splicer();
   auto dst_channel = socket_splicer->client_channel();
 
+  if (disconnect_requested()) {
+    return send_client_failed(make_error_code(std::errc::operation_canceled));
+  }
+
   ++active_work_;
   socket_splicer->async_send_client(
       [this, next, to_transfer = dst_channel->send_buffer().size()](
@@ -247,43 +251,31 @@ void MysqlRoutingClassicConnectionBase::async_send_client(Function next) {
 }
 
 void MysqlRoutingClassicConnectionBase::async_recv_client(Function next) {
+  if (disconnect_requested()) {
+    return recv_client_failed(make_error_code(std::errc::operation_canceled));
+  }
+
   ++active_work_;
-  this->socket_splicer()->async_recv_client([this, next](std::error_code ec,
-                                                         size_t transferred) {
-    (void)transferred;
+  this->socket_splicer()->async_recv_client(
+      [this, next](std::error_code ec, size_t transferred [[maybe_unused]]) {
+        --active_work_;
 
-    --active_work_;
+        if (ec != std::errc::operation_canceled) {
+          read_timer().cancel();
+        }
 
-    if (ec == std::errc::operation_canceled) {
-      // cancelled by:
-      //
-      // - request to shutdown
-      // - timer
-      // - read-from-client-xor-server
-      if (recv_from_either() ==
-          MysqlRoutingClassicConnectionBase::FromEither::RecvedFromServer) {
-        recv_from_either(MysqlRoutingClassicConnectionBase::FromEither::None);
+        if (ec) return recv_client_failed(ec);
 
-        return call_next_function(next);
-      }
-    } else {
-      read_timer().cancel();
-    }
-
-    if (ec) return recv_client_failed(ec);
-
-    if (recv_from_either() ==
-        MysqlRoutingClassicConnectionBase::FromEither::Started) {
-      recv_from_either(
-          MysqlRoutingClassicConnectionBase::FromEither::RecvedFromClient);
-    }
-
-    return trace_and_call_function(Tracer::Event::Direction::kClientToRouter,
-                                   "io::recv", next);
-  });
+        return trace_and_call_function(
+            Tracer::Event::Direction::kClientToRouter, "io::recv", next);
+      });
 }
 
 void MysqlRoutingClassicConnectionBase::async_send_server(Function next) {
+  if (disconnect_requested()) {
+    return send_server_failed(make_error_code(std::errc::operation_canceled));
+  }
+
   auto socket_splicer = this->socket_splicer();
   auto dst_channel = socket_splicer->server_channel();
 
@@ -307,7 +299,64 @@ void MysqlRoutingClassicConnectionBase::async_send_server(Function next) {
 }
 
 void MysqlRoutingClassicConnectionBase::async_recv_server(Function next) {
+  if (disconnect_requested()) {
+    return recv_server_failed(make_error_code(std::errc::operation_canceled));
+  }
+
   ++active_work_;
+
+  this->socket_splicer()->async_recv_server(
+      [this, next](std::error_code ec, size_t transferred [[maybe_unused]]) {
+        --active_work_;
+
+        if (ec) return recv_server_failed(ec);
+
+        return trace_and_call_function(
+            Tracer::Event::Direction::kServerToRouter, "io::recv", next);
+      });
+}
+
+void MysqlRoutingClassicConnectionBase::async_recv_both(Function next) {
+  if (disconnect_requested()) {
+    return recv_client_failed(make_error_code(std::errc::operation_canceled));
+  }
+
+  recv_from_either(MysqlRoutingClassicConnectionBase::FromEither::Started);
+
+  ++active_work_;  // client
+  ++active_work_;  // server
+
+  this->socket_splicer()->async_recv_client([this, next](std::error_code ec,
+                                                         size_t transferred
+                                                         [[maybe_unused]]) {
+    --active_work_;
+
+    if (ec == std::errc::operation_canceled) {
+      // cancelled by:
+      //
+      // - request to shutdown
+      // - timer
+      // - read-from-client-xor-server
+      if (recv_from_either() ==
+          MysqlRoutingClassicConnectionBase::FromEither::RecvedFromServer) {
+        recv_from_either(MysqlRoutingClassicConnectionBase::FromEither::None);
+
+        return call_next_function(next);
+      }
+    }
+
+    if (ec) return recv_client_failed(ec);
+
+    if (recv_from_either() ==
+        MysqlRoutingClassicConnectionBase::FromEither::Started) {
+      recv_from_either(
+          MysqlRoutingClassicConnectionBase::FromEither::RecvedFromClient);
+    }
+
+    return trace_and_call_function(Tracer::Event::Direction::kClientToRouter,
+                                   "io::recv", next);
+  });
+
   this->socket_splicer()->async_recv_server([this, next](std::error_code ec,
                                                          size_t transferred) {
     (void)transferred;
@@ -447,6 +496,8 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
     net::const_buffer session_trackers,
     classic_protocol::capabilities::value_type caps,
     bool ignore_some_state_changed) {
+  std::bitset<5> set_names_sysvar{};
+
   do {
     auto decode_session_res = classic_protocol::decode<
         classic_protocol::borrowed::session_track::Field>(session_trackers,
@@ -483,16 +534,28 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
         } else {
           const auto kv = decode_value_res->second;
 
-          std::ostringstream oss;
-
-          oss << "<< "
-              << "SET @@SESSION." << kv.key() << " = " << quoted(kv.value())
-              << ";";
+          if (kv.key() == "character_set_client") {
+            set_names_sysvar.set(0);
+          } else if (kv.key() == "character_set_connection") {
+            set_names_sysvar.set(1);
+          } else if (kv.key() == "character_set_results") {
+            set_names_sysvar.set(2);
+          } else if (kv.key() == "collation_connection") {
+            set_names_sysvar.set(3);
+          }
 
           exec_ctx_.system_variables().set(std::string(kv.key()),
                                            Value(std::string(kv.value())));
 
-          trace(Tracer::Event().stage(oss.str()));
+          if (auto &tr = tracer()) {
+            std::ostringstream oss;
+
+            oss << "<< "
+                << "SET @@SESSION." << kv.key() << " = " << quoted(kv.value())
+                << ";";
+
+            tr.trace(Tracer::Event().stage(oss.str()));
+          }
         }
       } break;
       case Type::Schema: {
@@ -504,11 +567,14 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
         } else {
           auto schema = std::string(decode_value_res->second.schema());
 
-          std::ostringstream oss;
+          if (auto &tr = tracer()) {
+            std::ostringstream oss;
 
-          oss << "<< "
-              << "USE " << schema;
-          trace(Tracer::Event().stage(oss.str()));
+            oss << "<< "
+                << "USE " << schema;
+
+            tr.trace(Tracer::Event().stage(oss.str()));
+          }
 
           server_protocol()->schema(schema);
           client_protocol()->schema(schema);
@@ -527,12 +593,14 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
             some_state_changed_ = true;
           }
 
-          std::ostringstream oss;
+          if (auto &tr = tracer()) {
+            std::ostringstream oss;
 
-          oss << "<< "
-              << "some session state changed.";
+            oss << "<< "
+                << "some session state changed.";
 
-          trace(Tracer::Event().stage(oss.str()));
+            tr.trace(Tracer::Event().stage(oss.str()));
+          }
         }
       } break;
       case Type::Gtid: {
@@ -544,13 +612,15 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
         } else {
           auto gtid = decode_value_res->second;
 
-          std::ostringstream oss;
+          if (auto &tr = tracer()) {
+            std::ostringstream oss;
 
-          oss << "<< "
-              << "gtid: (spec: " << static_cast<int>(gtid.spec()) << ") "
-              << gtid.gtid();
+            oss << "<< "
+                << "gtid: (spec: " << static_cast<int>(gtid.spec()) << ") "
+                << gtid.gtid();
 
-          trace(Tracer::Event().stage(oss.str()));
+            tr.trace(Tracer::Event().stage(oss.str()));
+          }
         }
       } break;
       case Type::TransactionState: {
@@ -565,104 +635,106 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
           // remember the last transaction-state
           trx_state_ = trx_state;
 
-          std::ostringstream oss;
+          if (auto &tr = tracer()) {
+            std::ostringstream oss;
 
-          oss << "<< "
-              << "trx-state: ";
+            oss << "<< "
+                << "trx-state: ";
 
-          switch (trx_state.trx_type()) {
-            case '_':
-              oss << "no trx";
-              break;
-            case 'T':
-              oss << "explicit trx";
-              break;
-            case 'I':
-              oss << "implicit trx";
-              break;
-            default:
-              oss << "(unknown trx-type)";
-              break;
+            switch (trx_state.trx_type()) {
+              case '_':
+                oss << "no trx";
+                break;
+              case 'T':
+                oss << "explicit trx";
+                break;
+              case 'I':
+                oss << "implicit trx";
+                break;
+              default:
+                oss << "(unknown trx-type)";
+                break;
+            }
+
+            switch (trx_state.read_trx()) {
+              case '_':
+                break;
+              case 'R':
+                oss << ", read trx";
+                break;
+              default:
+                oss << ", (unknown read-trx-type)";
+                break;
+            }
+
+            switch (trx_state.read_unsafe()) {
+              case '_':
+                break;
+              case 'r':
+                oss << ", read trx (non-transactional)";
+                break;
+              default:
+                oss << ", (unknown read-unsafe-type)";
+                break;
+            }
+
+            switch (trx_state.write_trx()) {
+              case '_':
+                break;
+              case 'W':
+                oss << ", write trx";
+                break;
+              default:
+                oss << ", (unknown write-trx-type)";
+                break;
+            }
+
+            switch (trx_state.write_unsafe()) {
+              case '_':
+                break;
+              case 'w':
+                oss << ", write trx (non-transactional)";
+                break;
+              default:
+                oss << ", (unknown write-unsafe-type)";
+                break;
+            }
+
+            switch (trx_state.stmt_unsafe()) {
+              case '_':
+                break;
+              case 's':
+                oss << ", stmt unsafe (UUID(), RAND(), ...)";
+                break;
+              default:
+                oss << ", (unknown stmt-unsafe-type)";
+                break;
+            }
+
+            switch (trx_state.resultset()) {
+              case '_':
+                break;
+              case 'S':
+                oss << ", resultset sent";
+                break;
+              default:
+                oss << ", (unknown resultset-type)";
+                break;
+            }
+
+            switch (trx_state.locked_tables()) {
+              case '_':
+                break;
+              case 'L':
+                oss << ", LOCK TABLES";
+                break;
+              default:
+                oss << ", (unknown locked-tables-type)";
+                break;
+            }
+
+            tr.trace(Tracer::Event().stage(oss.str()));
           }
-
-          switch (trx_state.read_trx()) {
-            case '_':
-              break;
-            case 'R':
-              oss << ", read trx";
-              break;
-            default:
-              oss << ", (unknown read-trx-type)";
-              break;
-          }
-
-          switch (trx_state.read_unsafe()) {
-            case '_':
-              break;
-            case 'r':
-              oss << ", read trx (non-transactional)";
-              break;
-            default:
-              oss << ", (unknown read-unsafe-type)";
-              break;
-          }
-
-          switch (trx_state.write_trx()) {
-            case '_':
-              break;
-            case 'W':
-              oss << ", write trx";
-              break;
-            default:
-              oss << ", (unknown write-trx-type)";
-              break;
-          }
-
-          switch (trx_state.write_unsafe()) {
-            case '_':
-              break;
-            case 'w':
-              oss << ", write trx (non-transactional)";
-              break;
-            default:
-              oss << ", (unknown write-unsafe-type)";
-              break;
-          }
-
-          switch (trx_state.stmt_unsafe()) {
-            case '_':
-              break;
-            case 's':
-              oss << ", stmt unsafe (UUID(), RAND(), ...)";
-              break;
-            default:
-              oss << ", (unknown stmt-unsafe-type)";
-              break;
-          }
-
-          switch (trx_state.resultset()) {
-            case '_':
-              break;
-            case 'S':
-              oss << ", resultset sent";
-              break;
-            default:
-              oss << ", (unknown resultset-type)";
-              break;
-          }
-
-          switch (trx_state.locked_tables()) {
-            case '_':
-              break;
-            case 'L':
-              oss << ", LOCK TABLES";
-              break;
-            default:
-              oss << ", (unknown locked-tables-type)";
-              break;
-          }
-
-          trace(Tracer::Event().stage(oss.str()));
         }
       } break;
       case Type::TransactionCharacteristics: {
@@ -678,11 +750,13 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
           trx_characteristics_ = {
               std::string(trx_characteristics.characteristics())};
 
-          std::ostringstream oss;
+          if (auto &tr = tracer()) {
+            std::ostringstream oss;
 
-          oss << "<< trx-stmt: " << trx_characteristics.characteristics();
+            oss << "<< trx-stmt: " << trx_characteristics.characteristics();
 
-          trace(Tracer::Event().stage(oss.str()));
+            tr.trace(Tracer::Event().stage(oss.str()));
+          }
         }
       } break;
     }
@@ -690,6 +764,12 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
     // go to the next field.
     session_trackers += decoded_size;
   } while (session_trackers.size() > 0);
+
+  if (set_names_sysvar.to_ulong() == 0b0111) {
+    // character_set... are set, but not collation_connection.
+
+    collation_connection_maybe_dirty_ = true;
+  }
 
   return {};
 }
@@ -726,9 +806,7 @@ void MysqlRoutingClassicConnectionBase::loop() {
       case Processor::Result::RecvFromServer:
         return async_recv_server(Function::kLoop);
       case Processor::Result::RecvFromBoth:
-        async_recv_client(Function::kLoop);
-        async_recv_server(Function::kLoop);
-        return;
+        return async_recv_both(Function::kLoop);
       case Processor::Result::SendToClient:
         return async_send_client(Function::kLoop);
       case Processor::Result::SendToServer:

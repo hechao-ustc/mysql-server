@@ -66,6 +66,7 @@ ADD_CONVENIENCE_LIBRARY(ndbapi
   Ndblist.cpp
   ObjectMap.cpp
   SignalSender.cpp
+  SectionIterators.cpp
   TransporterFacade.cpp
   WakeupHandler.cpp
   ndb_cluster_connection.cpp
@@ -76,3 +77,8 @@ ADD_CONVENIENCE_LIBRARY(ndbapi
   trp_node.cpp
   LINK_LIBRARIES ext::zlib
   )
+
+# Exclude ndbapi_objlib from PGO on Windows to avoid linker error LNK1248
+EXCLUDE_FROM_MSVC_PGO(ndbapi_objlib)
+
+NDB_ADD_TEST(SectionIterators-t SectionIterators.cpp NdbApiSignal.cpp)

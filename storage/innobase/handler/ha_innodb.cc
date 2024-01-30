@@ -2294,15 +2294,19 @@ int convert_error_code_to_mysql(dberr_t error, uint32_t flags, THD *thd) {
 }
 
 /** Prints info of a THD object (== user session thread) to the given file. */
-void innobase_mysql_print_thd(
-    FILE *f,            /*!< in: output stream */
-    THD *thd,           /*!< in: MySQL THD object */
-    uint max_query_len) /*!< in: max query length to print, or 0 to
-                        use the default max length */
+void innobase_mysql_print_thd(FILE *f,            /*!< in: output stream */
+                              THD *thd,           /*!< in: MySQL THD object */
+                              uint max_query_len) /*!< in: max query length to
+                                                  print, must be positive */
 {
-  char buffer[1024];
+  // This is meant to be an upper bound for non-SQL part of the context,
+  // such as trx's id, state and stats.
+  ut_a(0 < max_query_len);
+  constexpr size_t ADDITIONAL_CTX_LEN = 1024;
+  ut::vector<char> buffer(ADDITIONAL_CTX_LEN + max_query_len);
 
-  fputs(thd_security_context(thd, buffer, sizeof buffer, max_query_len), f);
+  fputs(thd_security_context(thd, buffer.data(), buffer.size(), max_query_len),
+        f);
   putc('\n', f);
 }
 
@@ -2778,13 +2782,7 @@ trx_t *innobase_trx_allocate(THD *thd) /*!< in: user thread handle */
   MONITOR_ATOMIC_INC(MONITOR_TRX_ALLOCATIONS);
   trx = trx_allocate_for_mysql();
 
-  rw_lock_s_lock(&purge_sys->latch, UT_LOCATION_HERE);
-
-  if (purge_sys->thds.find(thd) != purge_sys->thds.end()) {
-    trx->purge_sys_trx = true;
-  }
-
-  rw_lock_s_unlock(&purge_sys->latch);
+  trx->purge_sys_trx = purge_sys->is_this_a_purge_thread;
 
   trx->mysql_thd = thd;
 
@@ -3430,10 +3428,17 @@ void Validate_files::check(const Const_iter &begin, const Const_iter &end,
 
   auto heap = mem_heap_create(FN_REFLEN * 2 + 1, UT_LOCATION_HERE);
 
-  /* If the setting for innodb_validate_tablespace_paths is NO and we are
-  not in recovery, then only validate undo tablespaces. */
+  /* Validate all tablespaces if innodb_validate_tablespace_paths=ON OR
+  server is in recovery  OR Change buffer is not empty. Change buffer
+  applier background thread will skip the change buffer entries of the
+  tablespaces which are not loaded which will cause corruption of
+  secondary indexes, so it is important to load the tablespaces for which
+  entry is present in the change buffer. Presently we are loading all the
+  tablespaces. If all the conditions mentioned above are false then
+  validate only undo tablespaces */
+
   const bool ibd_validate =
-      srv_validate_tablespace_paths || recv_needed_recovery;
+      srv_validate_tablespace_paths || recv_needed_recovery || !ibuf_is_empty();
 
   std::string prefix;
   if (m_n_threads > 0) {
@@ -3497,7 +3502,8 @@ void Validate_files::check(const Const_iter &begin, const Const_iter &end,
     }
 
     /* If --innodb_validate_tablespace_paths=OFF and
-    startup is not in recovery, then skip all IBD files. */
+    startup is not in recovery and change buffer is empty,
+    then skip all IBD files. */
     if (!ibd_validate && !fsp_is_undo_tablespace(space_id)) {
       ++m_n_skipped;
       continue;
@@ -3771,7 +3777,8 @@ dberr_t Validate_files::validate(const DD_tablespaces &tablespaces) {
   m_n_threads = fil_get_scan_threads(m_n_to_check);
   m_start_time = std::chrono::steady_clock::now();
 
-  if (!srv_validate_tablespace_paths && !recv_needed_recovery) {
+  if (!srv_validate_tablespace_paths && !recv_needed_recovery &&
+      ibuf_is_empty()) {
     ib::info(ER_IB_TABLESPACE_PATH_VALIDATION_SKIPPED);
   }
 
@@ -17500,21 +17507,18 @@ static uint64_t innodb_get_auto_increment_for_uncached(
   DDTableBuffer *table_buffer = dict_persist->table_buffer;
 
   uint64_t version;
-  std::string *readmeta = table_buffer->get(se_private_id, &version);
+  const auto readmeta = table_buffer->get(se_private_id, &version);
 
-  if (readmeta->length() != 0) {
+  if (!readmeta.empty()) {
     PersistentTableMetadata metadata(se_private_id, version);
 
-    dict_table_read_dynamic_metadata(
-        reinterpret_cast<const byte *>(readmeta->data()), readmeta->length(),
-        &metadata);
+    dict_table_read_dynamic_metadata(readmeta.data(), readmeta.size(),
+                                     &metadata);
 
     meta_autoinc = metadata.get_autoinc();
   }
 
   mutex_exit(&dict_persist->mutex);
-
-  ut::delete_(readmeta);
 
   return (std::max(meta_autoinc, autoinc));
 }

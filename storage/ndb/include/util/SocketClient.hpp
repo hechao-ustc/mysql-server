@@ -25,30 +25,29 @@
 #ifndef SOCKET_CLIENT_HPP
 #define SOCKET_CLIENT_HPP
 
+#include "portlib/ndb_sockaddr.h"
 #include "portlib/ndb_socket.h"
 #include "util/NdbSocket.h"
 
 class SocketAuthenticator;
 
-class SocketClient
-{
+class SocketClient {
   unsigned int m_connect_timeout_millisec;
   unsigned short m_last_used_port;
   SocketAuthenticator *m_auth;
-public:
+
+ public:
   SocketClient(SocketAuthenticator *sa = nullptr);
   ~SocketClient();
-  bool init();
+  bool init(int af);
   void set_connect_timeout(unsigned int timeout_millisec) {
     m_connect_timeout_millisec = timeout_millisec;
   }
-  int bind(const char* local_hostname,
-           unsigned short local_port);
-  ndb_socket_t connect(const char* server_hostname,
-                       unsigned short server_port);
-  void connect(NdbSocket &, const char *hostname, unsigned short port);
+  int bind(ndb_sockaddr local);
+  NdbSocket connect(ndb_sockaddr server_addr);
+  int authenticate(const NdbSocket &);
 
   ndb_socket_t m_sockfd;
 };
 
-#endif // SOCKET_ClIENT_HPP
+#endif  // SOCKET_ClIENT_HPP

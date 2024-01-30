@@ -248,7 +248,10 @@ struct Builder {
     ddl::file_t m_file{};
 
     /** Buffer to use for file writes. */
-    Aligned_buffer m_aligned_buffer{};
+    ut::unique_ptr_aligned<byte[]> m_aligned_buffer{};
+
+    /** Buffer to use for file writes. */
+    IO_buffer m_io_buffer;
 
     /** Record list starting offset in the output file. */
     Merge_offsets m_offsets{};
@@ -391,6 +394,16 @@ struct Builder {
   @return DB_SUCCESS or error code. */
   [[nodiscard]] dberr_t check_duplicates(Thread_ctxs &dupcheck,
                                          Dup *dup) noexcept;
+
+  /** Cleanup DDL after error in online build
+  Note: To be called if DDL must cleanup due to error in online build. Pages
+  which are buffer-fixed (in Page_load::release) until the next iteration, must
+  be unfixed (with Page_load::latch) before returning the error.
+  @note: Assumes that either m_btr_load->release is called before or
+  m_n_recs is 0 (no records are inserted yet).
+  @param[in]  err    Error hit in online build
+  @return the cursor error status. */
+  [[nodiscard]] dberr_t online_build_handle_error(dberr_t err) noexcept;
 
  private:
   /** Buffer ID. */

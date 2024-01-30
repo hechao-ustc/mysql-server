@@ -737,11 +737,22 @@ SET(CMAKE_SIZEOF_VOID_P ${SIZEOF_VOIDP})
 INCLUDE(compile_flags)
 INCLUDE(install_layout)
 
+IF(WITH_ASAN OR WITH_LSAN OR WITH_MSAN OR WITH_TSAN OR WITH_UBSAN)
+  SET(WITH_SOME_SANITIZER ON)
+ELSE()
+  SET(WITH_SOME_SANITIZER OFF)
+ENDIF()
+
+
 # Add RPM or DEB platform flags for STANDALONE build.
 # Not for DEBUG builds, since both platforms use -O2 and _FORTIFY_SOURCE.
 # Not for Release or MinSizeRel, it will inflate binary sizes.
 IF(LINUX_STANDALONE AND (LINUX_DEB_PLATFORM OR LINUX_RPM_PLATFORM))
-  IF(CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG" OR WITH_DEBUG)
+  # Do not add FORTIFY_SOURCE to any of the sanitizers
+  # https://github.com/google/sanitizers/issues/247
+  IF(WITH_SOME_SANITIZER)
+    SET(WITH_PACKAGE_FLAGS_DEFAULT OFF)
+  ELSEIF(CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG" OR WITH_DEBUG)
     SET(WITH_PACKAGE_FLAGS_DEFAULT OFF)
   ELSEIF(CMAKE_BUILD_TYPE_UPPER STREQUAL "RELWITHDEBINFO")
     SET(WITH_PACKAGE_FLAGS_DEFAULT ON)
@@ -778,7 +789,7 @@ IF(WITH_DEFAULT_COMPILER_OPTIONS)
 ENDIF()
 
 # Assume, for now at least, that we want build-id for all kinds of Linux builds.
-IF(LINUX)
+IF(LINUX AND NOT LINUX_ALPINE)
   OPTION(WITH_BUILD_ID "Add --build-id=sha1 to all executables." ON)
   IF(WITH_BUILD_ID)
     SET(HAVE_BUILD_ID_SUPPORT 1)
@@ -828,9 +839,6 @@ INCLUDE(fprofile)
 INCLUDE(gloves)
 INCLUDE(fido2)
 INCLUDE(win_jemalloc)
-INCLUDE(msvc_cppcheck)
-
-MSVC_CPPCHECK()
 
 IF(UNIX)
   OPTION(WITH_VALGRIND "Valgrind instrumentation" OFF)
@@ -1069,6 +1077,9 @@ MACRO(DISABLE_MISSING_PROFILE_WARNING)
   ENDIF()
 ENDMACRO()
 
+OPTION(OPTIMIZE_SANITIZER_BUILDS
+  "Add -O1 -fno-inline to sanitizer builds" ON)
+
 MACRO(MY_SANITIZER_CHECK SAN_OPT ADD_OPTIMIZATION RESULT)
   MY_CHECK_C_COMPILER_FLAG("${SAN_OPT}" C_RESULT)
   MY_CHECK_CXX_COMPILER_FLAG("${SAN_OPT}" CXX_RESULT)
@@ -1078,7 +1089,7 @@ MACRO(MY_SANITIZER_CHECK SAN_OPT ADD_OPTIMIZATION RESULT)
     # We switch on basic optimization also for debug builds.
     # We disable inlining for stack trace readability.
     # With optimization we may get some warnings, so we switch off -Werror
-    IF(${ADD_OPTIMIZATION})
+    IF(${ADD_OPTIMIZATION} AND OPTIMIZE_SANITIZER_BUILDS)
       IF(MSVC)
         STRING_APPEND(CMAKE_C_FLAGS   " -O1 /Ob0")
         STRING_APPEND(CMAKE_CXX_FLAGS " -O1 /Ob0")
@@ -1659,7 +1670,7 @@ IF(WITH_LTO)
 ENDIF(WITH_LTO)
 
 IF(APPLE)
-  OPTION(WITH_DEVELOPER_ENTILEMENTS "Add developer entitlements" OFF)
+  OPTION(WITH_DEVELOPER_ENTITLEMENTS "Add developer entitlements" OFF)
 ENDIF()
 
 # Explicit list of all -DWITH_XXX=system possibilities
@@ -1998,6 +2009,15 @@ IF(LINUX)
   HAVE_PTHREAD_SETNAME_NP)
 ENDIF()
 
+# Cannot use system tirpc with custom OpenSSL
+IF(WITH_SSL_PATH AND (LINUX_RHEL8 OR LINUX_RHEL9))
+  SET(WITH_TIRPC "bundled")
+ENDIF()
+
+IF(WITH_TIRPC STREQUAL "bundled")
+  ADD_SUBDIRECTORY(extra/tirpc)
+ENDIF()
+
 IF(WITH_PROTOBUF STREQUAL "bundled" OR WITH_FIDO STREQUAL "bundled")
   # Protobuf library is a target, installed to <root>/${INSTALL_PRIV_LIBDIR}
   # INSTALL_RPATH must be set for all binaries linking with libprotobuf.
@@ -2049,6 +2069,8 @@ OPTION(MYSQL_MAINTAINER_MODE
        "MySQL maintainer-specific development environment" OFF)
 
 INCLUDE(maintainer)
+INCLUDE(msvc_cppcheck)
+DO_MSVC_CPPCHECK()
 
 IF(WITH_UNIT_TESTS)
   ENABLE_TESTING()
@@ -2229,6 +2251,12 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS)
       MY_CHECK_CXX_COMPILER_WARNING("error=maybe-uninitialized" HAS_WARN_FLAG)
       IF(HAS_WARN_FLAG)
         MY_TARGET_LINK_OPTIONS(server_unittest_library "${HAS_WARN_FLAG}")
+      ENDIF()
+      # The mold linker and RelWithDebInfo build complains about
+      # the new expression in Rpl_info_values::init()
+      IF(MY_COMPILER_IS_GNU)
+        MY_TARGET_LINK_OPTIONS(server_unittest_library
+          "-Wno-alloc-size-larger-than")
       ENDIF()
     ENDIF()
   ELSE()
@@ -2454,15 +2482,6 @@ IF(NOT INSTALL_LAYOUT MATCHES "RPM")
   SET(MYSQL_DOCS_LOCATION "" CACHE PATH
     "Location from where documentation is copied")
   MARK_AS_ADVANCED(MYSQL_DOCS_LOCATION)
-  INSTALL(DIRECTORY Docs/ DESTINATION ${INSTALL_DOCDIR}
-    COMPONENT Documentation
-    PATTERN "Makefile.*" EXCLUDE
-    PATTERN "glibc*" EXCLUDE
-    PATTERN "linuxthreads.txt" EXCLUDE
-    PATTERN "myisam.txt" EXCLUDE
-    PATTERN "sp-imp-spec.txt" EXCLUDE
-    PATTERN "README.build" EXCLUDE
-  )
 ENDIF()
 
 # Now that we're done with all ADD_SUBDIRECTORY and thus all feature tests,
@@ -2584,6 +2603,11 @@ IF(DOXYGEN_FOUND)
     SET_PROPERTY(TARGET doxygen PROPERTY EXCLUDE_FROM_DEFAULT_BUILD TRUE)
   ENDIF()
 ENDIF(DOXYGEN_FOUND)
+
+MYSQL_ADD_EXECUTABLE(stack_direction
+  ${CMAKE_SOURCE_DIR}/cmake/stack_direction.c
+  SKIP_INSTALL
+  )
 
 INCLUDE(CPack)
 

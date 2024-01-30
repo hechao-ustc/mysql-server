@@ -591,8 +591,9 @@ Builder::Builder(ddl::Context &ctx, Loader &loader, size_t i) noexcept
 
   m_sort_index = is_fts_index() ? m_ctx.m_fts.m_ptr->sort_index() : m_index;
 
-  if (dict_table_is_comp(m_ctx.m_old_table) &&
-      !dict_table_is_comp(m_ctx.m_new_table)) {
+  DBUG_EXECUTE_IF("ddl_convert_charset_without_heap_fail", { return; });
+  if (!dict_table_is_comp(m_ctx.m_new_table)) {
+    /* Converting to redundant format requires heap allocation */
     m_conv_heap.create(sizeof(mrec_buf_t), UT_LOCATION_HERE);
   }
 }
@@ -661,9 +662,16 @@ dberr_t Builder::init(Cursor &cursor, size_t n_threads) noexcept {
 
     m_thread_ctxs.push_back(thread_ctx);
 
-    if (!thread_ctx->m_aligned_buffer.allocate(buffer_size.second)) {
+    thread_ctx->m_aligned_buffer =
+        ut::make_unique_aligned<byte[]>(ut::make_psi_memory_key(mem_key_ddl),
+                                        UNIV_SECTOR_SIZE, buffer_size.second);
+
+    if (!thread_ctx->m_aligned_buffer) {
       return DB_OUT_OF_MEMORY;
     }
+
+    thread_ctx->m_io_buffer = {thread_ctx->m_aligned_buffer.get(),
+                               buffer_size.second};
 
     if (is_spatial_index()) {
       thread_ctx->m_rtree_inserter = ut::new_withkey<RTree_inserter>(
@@ -925,10 +933,14 @@ dberr_t Builder::copy_columns(Copy_ctx &ctx, size_t &mv_rows_added,
                   page_size,
                   IF_DEBUG(dict_table_is_sdi(m_ctx.m_old_table->id), )
                       m_conv_heap.get());
-        } else {
-          /* Field length mismatch should not happen when rebuilding
-          redundant row format table. */
-          ut_a(dict_table_is_comp(m_index->table));
+        } else if (!dict_table_is_comp(m_index->table)) {
+          /* Heap is created when new table is not compact. */
+          ib::info(ER_IB_DDL_CONVERT_HEAP_NOT_FOUND);
+
+          DBUG_EXECUTE_IF("ddl_convert_charset_without_heap_fail",
+                          { return DB_ERROR; });
+          ut_ad(false);
+          return DB_ERROR;
         }
       }
     } else {
@@ -1205,6 +1217,23 @@ dberr_t Builder::key_buffer_sort(size_t thread_id) noexcept {
   return DB_SUCCESS;
 }
 
+dberr_t Builder::online_build_handle_error(dberr_t err) noexcept {
+  set_error(err);
+
+  if (m_btr_load != nullptr) {
+    /* page_loaders[0] has increased buf_fix_count through release(). This is
+    decremented by calling latch(). Similar release() calls for page_loaders at
+    non-zero levels are handled in finish() */
+    m_btr_load->latch();
+    err = m_btr_load->finish(err);
+
+    ut::delete_(m_btr_load);
+    m_btr_load = nullptr;
+  }
+
+  return get_error();
+}
+
 dberr_t Builder::insert_direct(Cursor &cursor, size_t thread_id) noexcept {
   ut_a(m_id == 0);
   ut_ad(is_skip_file_sort());
@@ -1217,13 +1246,30 @@ dberr_t Builder::insert_direct(Cursor &cursor, size_t thread_id) noexcept {
   {
     auto err = m_ctx.check_state_of_online_build_log();
 
+    DBUG_EXECUTE_IF("builder_insert_direct_trigger_error", {
+      static int count = 0;
+      ++count;
+      if (count > 1) {
+        err = DB_ONLINE_LOG_TOO_BIG;
+        m_ctx.m_trx->error_key_num = SERVER_CLUSTER_INDEX_ID;
+      }
+    });
+
     if (err != DB_SUCCESS) {
-      set_error(err);
-      err = m_btr_load->finish(err);
-      ut::delete_(m_btr_load);
-      m_btr_load = nullptr;
-      return get_error();
+      return online_build_handle_error(err);
     }
+  }
+
+  DBUG_EXECUTE_IF("builder_insert_direct_no_builder",
+                  { static_cast<void>(online_build_handle_error(DB_ERROR)); });
+
+  if (m_btr_load == nullptr) {
+    auto ind = index();
+    ib::error(ER_IB_MSG_DDL_FAIL_NO_BUILDER, static_cast<unsigned>(get_state()),
+              static_cast<unsigned>(get_error()), id(), ind->name(),
+              ind->space_id(), static_cast<unsigned>(ind->page),
+              ctx().old_table()->name.m_name, ctx().new_table()->name.m_name);
+    return DB_ERROR;
   }
 
   m_btr_load->latch();
@@ -1511,7 +1557,7 @@ dberr_t Builder::bulk_add_row(Cursor &cursor, Row &row, size_t thread_id,
 
     thread_ctx->m_offsets.push_back(file.m_size);
 
-    auto io_buffer = thread_ctx->m_aligned_buffer.io_buffer();
+    auto io_buffer = thread_ctx->m_io_buffer;
 
     err = key_buffer->serialize(io_buffer, persistor);
 
@@ -1532,8 +1578,13 @@ dberr_t Builder::add_row(Cursor &cursor, Row &row, size_t thread_id,
                          Latch_release &&latch_release) noexcept {
   auto err = m_ctx.check_state_of_online_build_log();
 
+  DBUG_EXECUTE_IF("builder_add_row_trigger_error", {
+    err = DB_ONLINE_LOG_TOO_BIG;
+    m_ctx.m_trx->error_key_num = SERVER_CLUSTER_INDEX_ID;
+  });
+
   if (err != DB_SUCCESS) {
-    set_error(err);
+    err = online_build_handle_error(err);
   } else if (is_spatial_index()) {
     if (!cursor.eof()) {
       err = batch_add_row(row, thread_id);

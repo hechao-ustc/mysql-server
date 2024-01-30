@@ -31,12 +31,17 @@ INCLUDE_DIRECTORIES(SYSTEM ${GMOCK_INCLUDE_DIRS})
 
 # Add tests
 SET(TESTS
-  transaction_payload_codec
-  transaction_compression
-  transaction_payload_iterator
-  gtids
   gno_intervals
-  heartbeat_codec)
+  grow_calculator
+  gtids
+  heartbeat_codec
+  managed_buffer
+  managed_buffer_sequence
+  rw_buffer_sequence
+  payload_event_buffer_istream
+  transaction_compression
+  transaction_payload_codec
+)
 
 FOREACH(test ${TESTS})
   MYSQL_ADD_EXECUTABLE(${test}-t ${test}-t.cc
@@ -44,3 +49,15 @@ FOREACH(test ${TESTS})
     LINK_LIBRARIES binlogstandalone_static gunit_small
     COMPILE_DEFINITIONS "${DISABLE_PSI_DEFINITIONS}")
 ENDFOREACH()
+
+SET(SRC_FILES
+gtid_set-t.cc)
+
+IF(WIN32)
+  LIST(APPEND SRC_FILES $<TARGET_OBJECTS:my_nt_servc>)
+ENDIF()
+
+MYSQL_ADD_EXECUTABLE(gtid_set-t ${SRC_FILES}
+  ADD_TEST gtid_set
+  LINK_LIBRARIES gunit_large server_unittest_library
+  COMPILE_DEFINITIONS "${DISABLE_PSI_DEFINITIONS}")

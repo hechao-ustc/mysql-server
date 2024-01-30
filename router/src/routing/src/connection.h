@@ -131,11 +131,15 @@ class MySQLRoutingConnectionBase {
 
   void accepted();
 
-  void connected();
+  virtual void connected();
 
   template <class F>
   auto disconnect_request(F &&f) {
     return disconnect_(std::forward<F>(f));
+  }
+
+  bool disconnect_requested() const {
+    return disconnect_([](auto requested) { return requested; });
   }
 
  protected:
